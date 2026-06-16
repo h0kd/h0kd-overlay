@@ -1,6 +1,6 @@
 [package]
 name = "stream-overlay"
-version = "0.2.5"
+version = "0.2.6"
 description = "Self-hosted Twitch Channel Points video overlay"
 authors = ["h0kd"]
 edition = "2021"
