@@ -32,6 +32,7 @@ const SCOPES: &str = "channel:read:redemptions";
 const DEVICE_URL: &str = "https://id.twitch.tv/oauth2/device";
 const TOKEN_URL: &str = "https://id.twitch.tv/oauth2/token";
 const HELIX_USERS: &str = "https://api.twitch.tv/helix/users";
+const HELIX_REWARDS: &str = "https://api.twitch.tv/helix/channel_points/custom_rewards";
 const HELIX_SUBS: &str = "https://api.twitch.tv/helix/eventsub/subscriptions";
 const EVENTSUB_WS: &str = "wss://eventsub.wss.twitch.tv/ws";
 const REDEMPTION_TYPE: &str = "channel.channel_points_custom_reward_redemption.add";
@@ -447,6 +448,62 @@ async fn get_broadcaster(
         display_name: str_field("display_name"),
         avatar: str_field("profile_image_url"),
     })
+}
+
+// ── Channel Points rewards (for linking a reward to a real Twitch reward) ────
+
+#[derive(Serialize)]
+pub struct RewardInfo {
+    pub id: String,
+    pub title: String,
+}
+
+/// List the connected channel's Channel Points custom rewards. Returns ALL of
+/// them (not only app-created — `only_manageable_rewards` defaults to false),
+/// so the UI can link a reward to its exact Twitch title without typos.
+pub async fn fetch_channel_rewards(data_dir: &Path) -> Result<Vec<RewardInfo>, String> {
+    let tokens = load_tokens(data_dir);
+    if tokens.access_token.trim().is_empty() {
+        return Err("No estás conectado a Twitch.".into());
+    }
+    let client_id = effective_client_id(&tokens.client_id);
+    let client = reqwest::Client::new();
+
+    let bc = get_broadcaster(&client, &client_id, &tokens.access_token)
+        .await
+        .map_err(|e| match e {
+            SessionError::Auth => "Sesión expirada. Reconectá con Twitch.".to_string(),
+            SessionError::Fatal(m) => m,
+            SessionError::Reconnect => "Error de conexión con Twitch.".to_string(),
+        })?;
+
+    let resp = client
+        .get(HELIX_REWARDS)
+        .header("Client-Id", &client_id)
+        .bearer_auth(&tokens.access_token)
+        .query(&[("broadcaster_id", bc.id.as_str())])
+        .send()
+        .await
+        .map_err(|e| format!("Error al consultar rewards: {e}"))?;
+    if !resp.status().is_success() {
+        return Err(format!("Twitch devolvió {} al listar rewards", resp.status()));
+    }
+
+    let body: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
+    let mut out: Vec<RewardInfo> = vec![];
+    if let Some(arr) = body.get("data").and_then(|d| d.as_array()) {
+        for r in arr {
+            let title = r.get("title").and_then(|v| v.as_str()).unwrap_or("");
+            if !title.is_empty() {
+                out.push(RewardInfo {
+                    id: r.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                    title: title.to_string(),
+                });
+            }
+        }
+    }
+    out.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase()));
+    Ok(out)
 }
 
 // ── EventSub: one WebSocket connection, processed until it drops ─────────────

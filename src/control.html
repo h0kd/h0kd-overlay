@@ -233,6 +233,10 @@
   input[type=text]:focus, input[type=number]:focus {
     border-color: var(--accent);
   }
+  .ri-twitch-link {
+    width: 100%; margin-top: 8px; padding: 7px 10px; font-size: 12px;
+    background: var(--s2); border: 1px solid var(--border); border-radius: 6px; color: var(--muted);
+  }
   .inline-row { display: flex; gap: 12px; }
   .inline-row .field { flex: 1; }
 
@@ -737,6 +741,8 @@
   var dirty   = false;
   var videoMetaCache = {};  // path → { w, h, dur } real video metadata
   var durTouched = {};      // reward name → true once the user edits its duration by hand
+  var twitchRewards = [];   // channel's Channel Points rewards [{id, title}], loaded when connected
+  var twRewardsLoaded = false;
 
   // Undo/redo history. Each entry is a JSON snapshot of { cfg, sel }. Rapid
   // edits (e.g. dragging the size handle) are coalesced via a debounce so one
@@ -905,6 +911,11 @@
         + '</div>'
         + '<button class="tw-btn secondary" id="twDisc">Desconectar</button>';
       document.getElementById('twDisc').addEventListener('click', twDisconnect);
+      // Load the channel's Channel Points rewards once, to offer linking.
+      if (!twRewardsLoaded) {
+        twRewardsLoaded = true;
+        loadTwitchRewards();
+      }
       return;
     }
 
@@ -931,8 +942,16 @@
   }
 
   async function twDisconnect() {
-    try { await invoke('twitch_disconnect'); twLastSig = ''; pollTwitch(); }
+    try { await invoke('twitch_disconnect'); twLastSig = ''; twitchRewards = []; twRewardsLoaded = false; pollTwitch(); }
     catch (e) { alert('Error: ' + e); }
+  }
+
+  // Fetch the channel's Channel Points rewards so the editor can offer linking.
+  async function loadTwitchRewards() {
+    try {
+      twitchRewards = await invoke('twitch_rewards');
+      if (sel && cfg.rewards[sel]) renderEditor(sel);   // refresh the link dropdown if open
+    } catch (_) { twitchRewards = []; }   // not affiliate / offline: just allow typing
   }
 
   async function pingServer() {
@@ -1152,6 +1171,19 @@
     document.getElementById('editorForm').style.display = 'none';
   }
 
+  // Dropdown to link a reward to one of the channel's Twitch Channel Points
+  // (picks the exact title — no typos). Hidden until rewards are loaded.
+  function twitchLinkSelect(name) {
+    if (!twitchRewards.length) return '';
+    var opts = twitchRewards.map(function(r) {
+      var sels = (r.title === name) ? ' selected' : '';
+      return '<option value="' + esc(r.title) + '"' + sels + '>' + esc(r.title) + '</option>';
+    }).join('');
+    return '<select id="ri-twitch-link" class="ri-twitch-link">'
+      + '<option value="">— Vincular a un reward de tu Twitch —</option>'
+      + opts + '</select>';
+  }
+
   function renderEditor(name) {
     var rc = cfg.rewards[name];
     document.getElementById('emptyState').style.display = 'none';
@@ -1181,6 +1213,7 @@
       '<div class="field">'
         + '<label>Nombre del reward (debe coincidir exactamente con Twitch)</label>'
         + '<input type="text" id="ri-name" value="' + esc(name) + '" />'
+        + twitchLinkSelect(name)
       + '</div>'
 
       + '<div class="field">'
@@ -1249,6 +1282,13 @@
       var newName = this.value.trim();
       if (!newName || newName === name) return;
       renameReward(name, newName);
+    });
+
+    var linkSel = document.getElementById('ri-twitch-link');
+    if (linkSel) linkSel.addEventListener('change', function() {
+      var title = this.value;   // exact Twitch reward title
+      if (!title || title === name) return;
+      renameReward(name, title);   // link = set the exact name; renameReward re-renders
     });
 
     document.getElementById('ri-vol').addEventListener('input', function() {

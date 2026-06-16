@@ -198,6 +198,14 @@ async fn twitch_disconnect(state: tauri::State<'_, AppState>) -> Result<(), Stri
 }
 
 #[tauri::command]
+async fn twitch_rewards(
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<twitch::RewardInfo>, String> {
+    let data_dir = state.data_dir.clone();
+    twitch::fetch_channel_rewards(data_dir.as_path()).await
+}
+
+#[tauri::command]
 fn open_data_dir(state: tauri::State<AppState>) -> Result<(), String> {
     // `open` opens the folder with the OS file manager on every platform.
     open::that(state.data_dir.as_path()).map_err(|e| e.to_string())
@@ -300,6 +308,7 @@ pub fn run() {
             twitch_set_client_id,
             twitch_connect,
             twitch_disconnect,
+            twitch_rewards,
             check_update,
             install_update
         ])
