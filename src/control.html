@@ -845,6 +845,9 @@
       + (state === 'connected' ? ' on'
       : state === 'pairing' || state === 'connecting' ? ' warn'
       : state === 'error' ? ' err' : '');
+    // When connected, the account card already shows a green "Conectado" dot,
+    // so hide the header dot to avoid the redundant second light.
+    dot.style.display = (state === 'connected') ? 'none' : '';
 
     // 1) Avanzado: usar un Client ID propio (normalmente no hace falta).
     if (twAdvanced || !st.clientId) {
