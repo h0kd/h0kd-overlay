@@ -53,6 +53,9 @@
   #statusBadge.saved  { background: #003a1a; color: var(--green); }
 
   .hdr-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
     background: var(--s2);
     border: 1px solid var(--border);
     color: var(--text);
@@ -63,6 +66,8 @@
     white-space: nowrap;
   }
   .hdr-btn:hover { background: var(--border); }
+  /* Inline SVG icons (Lucide, MIT) — inherit text color, no external deps. */
+  .icon { width: 15px; height: 15px; flex: none; vertical-align: -3px; }
   #saveBtn {
     background: var(--accent);
     color: #fff;
@@ -77,6 +82,9 @@
   #saveBtn:hover { background: var(--accentH); }
   #saveBtn:disabled { opacity: .4; cursor: default; }
   #testBtn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
     background: var(--green);
     color: #000;
     border: none;
@@ -311,11 +319,12 @@
   .video-chip .vc-missing { color: #c0392b; font-size: 11px; margin-left: 4px; }
   .video-chip .vc-ok { color: var(--green); font-size: 11px; margin-left: 4px; }
   .del-btn {
+    display: inline-flex;
+    align-items: center;
     background: none;
     border: none;
     color: var(--muted);
     cursor: pointer;
-    font-size: 16px;
     line-height: 1;
     padding: 0 2px;
   }
@@ -502,9 +511,9 @@
 <header>
   <h1>Stream <span>Overlay</span></h1>
   <span id="statusBadge">Sin cambios</span>
-  <button class="hdr-btn" id="openFolderBtn" title="Abrir carpeta con config.json y videos/">&#128193; Carpeta</button>
+  <button class="hdr-btn" id="openFolderBtn" title="Abrir carpeta con config.json y videos/"><svg class="icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>Carpeta</button>
   <select id="testRewardSel"></select>
-  <button id="testBtn">&#9654; Probar</button>
+  <button id="testBtn"><svg class="icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="6 3 20 12 6 21 6 3"/></svg>Probar</button>
   <button id="saveBtn" disabled>Guardar config.json</button>
 </header>
 
@@ -582,6 +591,19 @@
   const invoke = (window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke)
     || function() { return Promise.reject(new Error('Tauri no disponible')); };
 
+  // Inline SVG icons (Lucide, MIT) — same style as the static markup, no deps.
+  function svgIcon(inner) {
+    return '<svg class="icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"'
+      + ' fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"'
+      + ' stroke-linejoin="round" aria-hidden="true">' + inner + '</svg>';
+  }
+  var ICON = {
+    play:  svgIcon('<polygon points="6 3 20 12 6 21 6 3"/>'),
+    check: svgIcon('<path d="M20 6 9 17l-5-5"/>'),
+    warn:  svgIcon('<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>'),
+    x:     svgIcon('<path d="M18 6 6 18"/><path d="m6 6 12 12"/>')
+  };
+
   // External links (target="_blank") don't reach the system browser from inside
   // the webview. Route every such click through the Rust `open_url` command.
   document.addEventListener('click', function(e) {
@@ -631,7 +653,7 @@
         var text = el.textContent;
         navigator.clipboard.writeText(text).then(function() {
           var orig = el.textContent;
-          el.textContent = '✓ Copiado';
+          el.innerHTML = ICON.check + ' Copiado';
           setTimeout(function(){ el.textContent = orig; }, 900);
         });
       });
@@ -711,7 +733,7 @@
     // 4) Conectado.
     if (state === 'connected') {
       body.innerHTML =
-        '<p class="tw-line">✓ Conectado como <b>' + esc(st.login || '—') + '</b>. '
+        '<p class="tw-line">' + ICON.check + ' Conectado como <b>' + esc(st.login || '—') + '</b>. '
         + 'Los canjes disparan videos directo, sin Streamer.bot.</p>'
         + '<button class="tw-btn secondary" id="twDisc">Desconectar</button>';
       document.getElementById('twDisc').addEventListener('click', twDisconnect);
@@ -720,7 +742,7 @@
 
     // 5) Error / desconectado.
     body.innerHTML =
-      (state === 'error' && st.error ? '<p class="tw-error">⚠ ' + esc(st.error) + '</p>' : '')
+      (state === 'error' && st.error ? '<p class="tw-error">' + ICON.warn + ' ' + esc(st.error) + '</p>' : '')
       + '<p class="tw-line">Client ID: <b>' + esc(st.clientId.slice(0, 8)) + '…</b></p>'
       + '<button class="tw-btn" id="twConnect">Conectar con Twitch</button>'
       + '<button class="tw-btn secondary" id="twChangeId">Cambiar Client ID</button>';
@@ -800,9 +822,9 @@
     btn.textContent = '...';
     try {
       var d = await invoke('trigger_reward', { reward: reward, user: 'AdminTest' });
-      btn.textContent = d.clients === 0 ? '⚠ Sin overlay conectado' : '✓ Enviado';
-    } catch(e) { btn.textContent = '✗ Error'; console.error(e); }
-    setTimeout(function(){ btn.textContent = '▶ Probar'; }, 2000);
+      btn.innerHTML = d.clients === 0 ? ICON.warn + ' Sin overlay conectado' : ICON.check + ' Enviado';
+    } catch(e) { btn.innerHTML = ICON.x + ' Error'; console.error(e); }
+    setTimeout(function(){ btn.innerHTML = ICON.play + ' Probar'; }, 2000);
   }
 
   function renderRewardsList() {
@@ -837,7 +859,7 @@
       return '<div class="zone-item">'
         + '<div><div class="z-name">' + esc(z.name || 'zona ' + (i+1)) + '</div>'
         + '<div class="z-coords">' + z.x + ', ' + z.y + '  ' + z.width + '×' + z.height + '</div></div>'
-        + '<button class="del-btn" data-idx="' + i + '" title="Eliminar zona">&#x2715;</button>'
+        + '<button class="del-btn" data-idx="' + i + '" title="Eliminar zona">' + ICON.x + '</button>'
         + '</div>';
     }).join('');
     container.querySelectorAll('.del-btn').forEach(function(btn) {
@@ -878,7 +900,7 @@
         : '<span class="vc-missing" title="Archivo no encontrado en videos/">&#9888;</span>';
       return '<div class="video-chip">'
         + '<span class="vc-path">' + esc(vpath) + statusMark + '</span>'
-        + '<button class="del-btn" data-vi="' + i + '" title="Quitar video">&#x2715;</button>'
+        + '<button class="del-btn" data-vi="' + i + '" title="Quitar video">' + ICON.x + '</button>'
         + '</div>';
     }).join('');
 
