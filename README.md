@@ -9,6 +9,10 @@ App de escritorio self-hosted, sin servicios externos y sin límite de videos.
 
 [![Descargar para Windows](https://img.shields.io/badge/⬇%20Descargar-Windows-9147ff?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/h0kd/h0kd-overlay/releases/latest)
 
+<br/>
+
+<img src="docs/screenshots/panel.png" width="760" alt="Panel de control de Stream Overlay" />
+
 </div>
 
 ---
@@ -41,13 +45,15 @@ App de escritorio self-hosted, sin servicios externos y sin límite de videos.
 
 ## 🚀 Cómo usar
 
+La primera vez, la app te recibe con una guía rápida:
+
+<div align="center"><img src="docs/screenshots/onboarding.png" width="640" alt="Guía de bienvenida" /></div>
+
 ### 1. Conectá tu Twitch
 
 En el panel **Twitch** (arriba a la izquierda) → **Conectar con Twitch**. La app te da un
 código: andá a **[twitch.tv/activate](https://www.twitch.tv/activate)**, ingresalo y autorizá.
 Listo — se reconecta solo la próxima vez.
-
-<div align="center"><img src="docs/screenshots/twitch-panel.png" width="380" alt="Panel de Twitch conectado" /></div>
 
 ### 2. Agregá tus videos y rewards
 
