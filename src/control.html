@@ -817,7 +817,11 @@
   var videoMetaCache = {};  // path → { w, h, dur } real video metadata
   var durTouched = {};      // reward name → true once the user edits its duration by hand
   var twitchRewards = [];   // channel's Channel Points rewards [{id, title}], loaded when connected
-  var twRewardsLoaded = false;
+  var twRewardsLoaded = false;   // true ONLY once the list loaded OK (never latch a failure)
+  var twRewardsLoading = false;  // in-flight guard so polls don't overlap requests
+  var twRewardsFails = 0;        // consecutive failures; auto-retry stops after a few
+  var twRewardsNextTry = 0;      // ms timestamp: don't auto-retry before this
+  var twConnected = false;       // mirrors the latest Twitch status === 'connected'
 
   // Undo/redo history. Each entry is a JSON snapshot of { cfg, sel }. Rapid
   // edits (e.g. dragging the size handle) are coalesced via a debounce so one
@@ -934,6 +938,13 @@
     var st;
     try { st = await invoke('twitch_status'); }
     catch (_) { return; }
+    // Keep retrying the rewards fetch every poll (not just on status changes)
+    // until it succeeds. A transient failure right after a webview reload must
+    // not latch the dropdown into manual-text mode for the whole session.
+    if ((st.state || '') === 'connected' && !twRewardsLoaded
+        && twRewardsFails < 5 && Date.now() >= twRewardsNextTry) {
+      loadTwitchRewards();
+    }
     var sig = JSON.stringify(st);
     if (sig === twLastSig) return;   // no re-render mientras el usuario tipea
     twLastSig = sig;
@@ -944,6 +955,7 @@
     var dot = document.getElementById('twDot');
     var body = document.getElementById('twBody');
     var state = st.state || 'disconnected';
+    twConnected = (state === 'connected');
 
     dot.className = 'conn-dot'
       + (state === 'connected' ? ' on'
@@ -1009,11 +1021,9 @@
         + '</div>'
         + '<button class="tw-btn secondary" id="twDisc">Desconectar</button>';
       document.getElementById('twDisc').addEventListener('click', twDisconnect);
-      // Load the channel's Channel Points rewards once, to offer linking.
-      if (!twRewardsLoaded) {
-        twRewardsLoaded = true;
-        loadTwitchRewards();
-      }
+      // The rewards list is loaded (and auto-retried) from pollTwitch, which
+      // runs every poll — not here, since this branch only re-renders on a
+      // status change and would never retry a failed first fetch.
       return;
     }
 
@@ -1040,16 +1050,41 @@
   }
 
   async function twDisconnect() {
-    try { await invoke('twitch_disconnect'); twLastSig = ''; twitchRewards = []; twRewardsLoaded = false; pollTwitch(); }
+    try {
+      await invoke('twitch_disconnect');
+      twLastSig = ''; twitchRewards = [];
+      twRewardsLoaded = false; twRewardsFails = 0; twRewardsNextTry = 0;
+      pollTwitch();
+    }
     catch (e) { alert('Error: ' + e); }
   }
 
   // Fetch the channel's Channel Points rewards so the editor can offer linking.
+  // Latch `twRewardsLoaded` only on success: a failure leaves it false so the
+  // poll retries (with backoff), instead of degrading to manual text forever.
   async function loadTwitchRewards() {
+    if (twRewardsLoading) return;
+    twRewardsLoading = true;
     try {
       twitchRewards = await invoke('twitch_rewards');
+      twRewardsLoaded = true; twRewardsFails = 0;
       if (sel && cfg.rewards[sel]) renderEditor(sel);   // refresh the link dropdown if open
-    } catch (_) { twitchRewards = []; }   // not affiliate / offline: just allow typing
+    } catch (e) {
+      twitchRewards = [];                  // not affiliate / offline / transient: allow typing
+      twRewardsFails++;
+      twRewardsNextTry = Date.now() + 15000;   // back off ~15s before the next auto-retry
+      console.warn('[Overlay] No se pudieron cargar las rewards de Twitch:', e);
+    } finally {
+      twRewardsLoading = false;
+    }
+  }
+
+  // Manual "↻ Actualizar" from the editor: force an immediate re-fetch (also
+  // picks up rewards created in the Twitch dashboard while the app was open).
+  async function refreshTwitchRewards() {
+    twRewardsLoaded = false; twRewardsFails = 0; twRewardsNextTry = 0;
+    await loadTwitchRewards();
+    if (sel && cfg.rewards[sel]) renderEditor(sel);   // restore the button / show fresh list
   }
 
   async function pingServer() {
@@ -1307,13 +1342,19 @@
           + '<option value=""' + (matched ? '' : ' selected') + '>— Elegí tu reward de Twitch —</option>'
           + opts
         + '</select>'
-        + (matched ? '' : '<div class="size-hint">Elegí a qué reward de Channel Points se vincula.</div>')
+        + '<button type="button" class="mini-btn" id="refreshRewardsBtn" style="margin-top:6px">↻ Actualizar lista</button>'
+        + (matched ? '' : '<div class="size-hint">Elegí a qué reward de Channel Points se vincula. ¿Creaste una nueva en Twitch? Tocá Actualizar.</div>')
       + '</div>';
     }
+    // Fallback to a manual text input: either not connected, or the rewards
+    // fetch failed. When connected, offer a button to retry the fetch.
     return '<div class="field">'
       + '<label>Nombre del reward</label>'
       + '<input type="text" id="ri-name" value="' + esc(name) + '" />'
-      + '<div class="size-hint">Conectá tu Twitch para elegirlo de una lista.</div>'
+      + (twConnected
+          ? '<button type="button" class="mini-btn" id="refreshRewardsBtn" style="margin-top:6px">↻ Cargar rewards de Twitch</button>'
+            + '<div class="size-hint">No se pudo cargar tu lista de rewards. Tocá para reintentar.</div>'
+          : '<div class="size-hint">Conectá tu Twitch para elegirlo de una lista.</div>')
     + '</div>';
   }
 
@@ -1428,6 +1469,12 @@
       var title = this.value;   // exact Twitch reward title
       if (!title || title === name) return;
       renameReward(name, title);   // link = set the exact name; renameReward re-renders
+    });
+
+    var refreshBtn = document.getElementById('refreshRewardsBtn');   // dropdown or fallback
+    if (refreshBtn) refreshBtn.addEventListener('click', function() {
+      this.disabled = true; this.textContent = 'Actualizando…';
+      refreshTwitchRewards();   // re-renders the editor on completion (restores the button)
     });
 
     document.getElementById('ri-vol').addEventListener('input', function() {
