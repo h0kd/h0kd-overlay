@@ -141,7 +141,7 @@ export class ChannelHub implements DurableObject {
   private async greetMod(ws: WebSocket): Promise<void> {
     const meta = await this.meta();
     if (!meta) return;
-    send(ws, { type: 'queue', items: await this.modQueue(meta.channel_id) });
+    send(ws, { type: 'queue', ...(await this.modSnapshot(meta.channel_id)) });
     send(ws, { type: 'agent', ...(await this.agentSnapshot()) });
   }
 
@@ -404,7 +404,17 @@ export class ChannelHub implements DurableObject {
 
   // ── Estado hacia los mods ──────────────────────────────────────────────────
 
-  private async modQueue(channelId: string) {
+  /**
+   * Lo que ve el panel de mods: la cola revisable, MÁS cuántos pedidos están
+   * esperando metadata del agente.
+   *
+   * Un ítem en `submitted` no entra en la lista porque no tiene título, ni
+   * miniatura, ni duración: no hay nada que revisar todavía. Pero si el agente
+   * está caído se acumulan ahí, y sin este contador el panel diría "no hay nada
+   * en la cola" mientras la gente manda links al vacío.
+   */
+  private async modSnapshot(channelId: string) {
+    const waiting = await q.listByStatus(this.env.DB, channelId, ['submitted']);
     const rows = await q.listByStatus(this.env.DB, channelId, [
       'pending_review',
       'approved',
@@ -413,7 +423,7 @@ export class ChannelHub implements DurableObject {
       'playing',
       'failed',
     ]);
-    return rows.map((r) => ({
+    const items = rows.map((r) => ({
       id: r.id,
       status: r.status,
       title: r.title,
@@ -424,12 +434,13 @@ export class ChannelHub implements DurableObject {
       submitter_login: r.submitter_login,
       error: r.error,
     }));
+    return { items, waiting: waiting.length };
   }
 
   private async pushQueueToMods(): Promise<void> {
     const meta = await this.meta();
     if (!meta) return;
-    this.broadcastMods({ type: 'queue', items: await this.modQueue(meta.channel_id) });
+    this.broadcastMods({ type: 'queue', ...(await this.modSnapshot(meta.channel_id)) });
   }
 
   private async pushAgentStateToMods(): Promise<void> {

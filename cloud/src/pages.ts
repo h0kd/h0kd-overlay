@@ -46,6 +46,8 @@ a{color:var(--accent)}
 .pill.warn{background:#3a2a00;color:#f0a000}
 .pill.err{background:#3a1212;color:#ffbcbc}
 .empty{color:var(--muted);font-size:13px;padding:18px 0;text-align:center}
+.waiting{font-size:12.5px;color:#f0a000;background:#3a2a00;border-radius:6px;
+padding:9px 12px;margin-bottom:12px;line-height:1.5}
 .mod-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--border)}
 .mod-row:first-child{border-top:none}
 .mod-row .name{flex:1}
@@ -202,8 +204,16 @@ export function modPage(): string {
   const LABEL = { pending_review: 'esperando revisión', approved: 'aprobado', downloading: 'descargando',
                   ready: 'listo', playing: 'reproduciendo', failed: 'falló' };
 
-  function render(items) {
+  function render(items, waiting) {
     const box = $('#queue'); box.textContent = '';
+    // Los pedidos en 'submitted' no son revisables todavía (no tienen título ni
+    // duración), pero si el agente está caído se acumulan ahí. Decirlo evita
+    // que el panel muestre "no hay nada" mientras la gente manda links al vacío.
+    if (waiting > 0) {
+      box.appendChild(el('div', 'waiting',
+        waiting + (waiting === 1 ? ' pedido esperando' : ' pedidos esperando')
+        + ' a que la app del streamer lea el video. No se pueden revisar hasta entonces.'));
+    }
     if (!items.length) { box.appendChild(el('div', 'empty', 'No hay nada en la cola.')); return; }
     for (const it of items) {
       const row = el('div', 'item');
@@ -257,7 +267,7 @@ export function modPage(): string {
     ws.onopen = () => { backoff = 1000; };
     ws.onmessage = (ev) => {
       let m; try { m = JSON.parse(ev.data); } catch (_) { return; }
-      if (m.type === 'queue') render(m.items);
+      if (m.type === 'queue') render(m.items, m.waiting || 0);
       else if (m.type === 'agent') agentPill(m);
     };
     ws.onclose = () => { setTimeout(connect, backoff); backoff = Math.min(30000, backoff * 2); };
