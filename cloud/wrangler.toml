@@ -2,11 +2,17 @@ name = "h0kd-video-requests"
 main = "src/index.ts"
 compatibility_date = "2026-01-01"
 
+# La URL de workers.dev es la publica del beta. Las Preview URLs se apagan a
+# proposito: crean URLs alternativas donde el redirect_uri de OAuth no coincide
+# con el registrado en Twitch, y serian paginas publicas a medio funcionar.
+workers_dev = true
+preview_urls = false
+
 # ── D1: fuente de verdad de cola, mods y settings ────────────────────────────
 [[d1_databases]]
 binding = "DB"
 database_name = "video-requests"
-database_id = "REEMPLAZAR_TRAS_wrangler_d1_create"
+database_id = "01f188c1-1d09-4315-9331-76f58b4ed3f6"
 
 # ── Durable Object: un hub de WebSocket por canal ────────────────────────────
 [[durable_objects.bindings]]
@@ -24,7 +30,7 @@ new_sqlite_classes = ["ChannelHub"]
 TWITCH_CLIENT_ID = "REEMPLAZAR"
 # Origen público del Worker, usado para armar el redirect_uri de OAuth y la
 # URL del callback de EventSub. Sin barra final.
-PUBLIC_ORIGIN = "https://h0kd-video-requests.workers.dev"
+PUBLIC_ORIGIN = "https://h0kd-video-requests.pomillo11.workers.dev"
 # Beta cerrado: logins de Twitch separados por coma que pueden dar de alta su
 # canal desde /admin. Vacía = abierto (solo para desarrollo).
 ALLOWED_CHANNELS = ""
