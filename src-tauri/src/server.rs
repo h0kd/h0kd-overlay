@@ -13,7 +13,11 @@ use futures_util::{SinkExt, StreamExt};
 use serde_json::json;
 use tower_http::{cors::CorsLayer, services::ServeDir};
 
-const SERVER_BIND: &str = "127.0.0.1:3001";
+/// Local HTTP/WS port. The experimental build owns 3002 so it can run side
+/// by side with the stable app (which keeps 3001) instead of dying on
+/// AddrInUse. Single source of truth: the control panel asks for it via
+/// `server_url`, and the overlay derives it from its own location.
+pub const SERVER_PORT: u16 = 3002;
 
 static OVERLAY_HTML: &str = include_str!("../../src/overlay.html");
 
@@ -31,13 +35,14 @@ pub async fn start(state: AppState) -> std::io::Result<()> {
         .layer(CorsLayer::permissive())
         .with_state(state);
 
+    let bind = format!("127.0.0.1:{}", SERVER_PORT);
     // `?` propagates AddrInUse to the caller, which records it as ServerHealth::Error.
-    let listener = tokio::net::TcpListener::bind(SERVER_BIND).await?;
+    let listener = tokio::net::TcpListener::bind(&bind).await?;
     if let Ok(mut h) = health.lock() {
         *h = crate::ServerHealth::Ok;
     }
-    println!("[Server] Listening on http://{}", SERVER_BIND);
-    println!("[Server] Overlay (OBS) → http://{}/overlay", SERVER_BIND);
+    println!("[Server] Listening on http://{}", bind);
+    println!("[Server] Overlay (OBS) → http://{}/overlay", bind);
 
     axum::serve(listener, app)
         .await

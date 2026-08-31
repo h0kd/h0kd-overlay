@@ -1,14 +1,18 @@
 name: Release
 
-# Cut a release by pushing a version tag, e.g.:
-#   git tag v0.2.0 && git push origin v0.2.0
-# The Windows installers are built and attached to a DRAFT GitHub Release,
-# which you review and publish manually.
+# EXPERIMENTAL CHANNEL. This branch releases under `exp-v*` tags only:
+#   git tag exp-v0.3.0 && git push origin exp-v0.3.0
+# A plain `v*` tag pushed from this branch builds NOTHING, which is the
+# point: the experimental app must never publish over the stable release
+# the auto-updater reads.
+#
+# When this branch merges back, restore the `v*` trigger and the stable
+# release name — otherwise stable releases stop building.
 
 on:
   push:
     tags:
-      - 'v*'
+      - 'exp-v*'
 
 permissions:
   contents: write   # needed to create the GitHub Release
@@ -39,12 +43,15 @@ jobs:
           # tauri.conf.json lives in src-tauri/; the CLI finds it from the repo root.
           # No frontend build step (frontendDist is the static src/ folder).
           tagName: ${{ github.ref_name }}
-          releaseName: 'Stream Overlay ${{ github.ref_name }}'
+          releaseName: 'Stream Overlay Experimental ${{ github.ref_name }}'
           releaseBody: |
-            Instalador de Stream Overlay para Windows.
+            Instalador de **Stream Overlay Experimental** para Windows.
+
+            > Se instala **al lado** de la versión estable (nombre, carpeta de
+            > datos y puerto propios: 3002). No reemplaza ni actualiza la estable.
 
             > La primera vez, Windows SmartScreen puede avisar que la app no es
             > reconocida (todavía no está firmada). Hacé clic en **Más info →
             > Ejecutar de todas formas** para instalar.
           releaseDraft: true
-          prerelease: false
+          prerelease: true

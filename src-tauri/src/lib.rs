@@ -14,9 +14,16 @@ pub struct AppState {
     pub twitch: twitch::SharedStatus,
     pub twitch_cmd: mpsc::Sender<TwitchCmd>,
     /// Whether THIS instance's HTTP/WS server bound the port. The only reliable
-    /// signal: an HTTP ping to :3001 can succeed against a *different* process
+    /// signal: an HTTP ping to the port can succeed against a *different* process
     /// (e.g. a stale instance) and falsely look healthy.
     pub server_health: Arc<Mutex<ServerHealth>>,
+    /// Video Requests feature flag, read ONCE at startup from
+    /// `videoRequests.enabled`. False means the module is never
+    /// constructed: no sidecars, no cloud WebSocket, no extra routes, no
+    /// UI beyond the toggle. Reading it once (instead of watching the
+    /// config) is deliberate — it makes "off = identical to stable"
+    /// verifiable by reading `run()`.
+    pub video_requests_enabled: bool,
 }
 
 /// Reported to the UI so it can warn when the local server didn't start.
@@ -44,14 +51,30 @@ fn default_config() -> Value {
     json!({
         "rewards": {},
         "safeZones": { "exclude": [] },
-        "canvas": { "width": 1920, "height": 1080 }
+        "canvas": { "width": 1920, "height": 1080 },
+        "videoRequests": { "enabled": false }
     })
 }
 
+/// Read the Video Requests flag. A missing key, an unreadable file or
+/// malformed JSON all mean *disabled*: the module must never switch itself
+/// on by accident, and this runs before anything else is initialized.
+fn read_video_requests_flag(dir: &Path) -> bool {
+    std::fs::read_to_string(dir.join("config.json"))
+        .ok()
+        .and_then(|s| serde_json::from_str::<Value>(&s).ok())
+        .and_then(|v| v["videoRequests"]["enabled"].as_bool())
+        .unwrap_or(false)
+}
+
 /// Per-user OS application-data directory for the app's config + videos.
-/// Windows: %APPDATA%\Stream Overlay
-/// macOS:   ~/Library/Application Support/Stream Overlay
-/// Linux:   $XDG_DATA_HOME/Stream Overlay (or ~/.local/share/Stream Overlay)
+/// Windows: %APPDATA%\Stream Overlay Experimental
+/// macOS:   ~/Library/Application Support/Stream Overlay Experimental
+/// Linux:   $XDG_DATA_HOME/Stream Overlay Experimental
+///
+/// The " Experimental" suffix keeps this build's config, videos and Twitch
+/// tokens completely apart from the stable app's, so the two can be
+/// installed and used side by side without overwriting each other.
 fn os_app_data_dir() -> PathBuf {
     let base: PathBuf = if cfg!(target_os = "windows") {
         std::env::var_os("APPDATA")
@@ -67,7 +90,7 @@ fn os_app_data_dir() -> PathBuf {
             .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")))
             .unwrap_or_else(|| PathBuf::from("."))
     };
-    base.join("Stream Overlay")
+    base.join("Stream Overlay Experimental")
 }
 
 /// Create the data dir + videos/ folder, and seed a default config.json the
@@ -253,6 +276,21 @@ fn open_url(url: String) -> Result<(), String> {
     open::that(&url).map_err(|e| e.to_string())
 }
 
+/// Base URL of THIS build's local server. The control panel builds every
+/// link and fetch from it instead of hardcoding a port, so the stable app
+/// (3001) and the experimental one (3002) each show their real address.
+#[tauri::command]
+fn server_url() -> String {
+    format!("http://127.0.0.1:{}", server::SERVER_PORT)
+}
+
+/// Whether the Video Requests module is live *in this process*. The UI
+/// compares it against the saved flag to tell the user a restart is pending.
+#[tauri::command]
+fn video_requests_active(state: tauri::State<AppState>) -> bool {
+    state.video_requests_enabled
+}
+
 // ── Auto-update (tauri-plugin-updater) ───────────────────────────────────────
 
 #[derive(serde::Serialize)]
@@ -325,6 +363,10 @@ async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let data_dir = Arc::new(find_data_dir());
+    let video_requests_enabled = read_video_requests_flag(&data_dir);
+    if video_requests_enabled {
+        println!("[VideoRequests] Flag activo.");
+    }
     // Drop the initial receiver so the count reflects only real WS clients (overlay connections).
     // tx.send() will return SendError when no subscribers exist; trigger_reward handles that via unwrap_or(0).
     let (tx, _) = broadcast::channel::<String>(64);
@@ -338,6 +380,7 @@ pub fn run() {
         twitch: twitch_shared,
         twitch_cmd,
         server_health: Arc::new(Mutex::new(ServerHealth::Starting)),
+        video_requests_enabled,
     };
 
     tauri::Builder::default()
@@ -360,9 +403,11 @@ pub fn run() {
             tauri::async_runtime::spawn(async move {
                 if let Err(e) = server::start(server_state).await {
                     let msg = if e.kind() == std::io::ErrorKind::AddrInUse {
-                        "El puerto 3001 ya está en uso por otra aplicación. \
-                         Cerrá la otra instancia (o el programa que lo ocupa) y reabrí Stream Overlay."
-                            .to_string()
+                        format!(
+                            "El puerto {} ya está en uso por otra aplicación. \
+                             Cerrá la otra instancia (o el programa que lo ocupa) y reabrí la app.",
+                            server::SERVER_PORT
+                        )
                     } else {
                         format!("No se pudo iniciar el servidor local: {}", e)
                     };
@@ -386,6 +431,8 @@ pub fn run() {
             overlay_count,
             open_data_dir,
             open_url,
+            server_url,
+            video_requests_active,
             twitch_status,
             twitch_set_client_id,
             twitch_connect,

@@ -193,6 +193,20 @@
   }
   .canvas-row label { color: var(--muted); font-size: 12px; display: flex; align-items: center; gap: 5px; }
 
+  /* ── Video Requests (experimental) ── */
+  .exp-tag {
+    font-size: 10px; letter-spacing: .04em; text-transform: uppercase;
+    color: var(--accent); border: 1px solid var(--accent);
+    border-radius: 4px; padding: 1px 5px; opacity: .85;
+  }
+  .vr-toggle {
+    display: flex; align-items: center; gap: 8px;
+    color: var(--text); font-size: 13px; cursor: pointer; margin-top: 4px;
+  }
+  .vr-note { font-size: 11px; color: var(--muted); line-height: 1.45; margin-top: 6px; }
+  .vr-note.warn { color: #f0a000; }
+  .vr-note.on   { color: var(--green); }
+
   /* ── Editor panel ── */
   #editor {
     overflow-y: auto;
@@ -687,7 +701,7 @@
       </div>
       <div class="onb-step">
         <span class="onb-num">3</span>
-        <div class="onb-step-body"><b>Conectá OBS.</b> Agregá un <b>Browser Source</b> con la URL <code>http://localhost:3001/overlay</code> (la copiás desde el pie de la app).</div>
+        <div class="onb-step-body"><b>Conectá OBS.</b> Agregá un <b>Browser Source</b> con la URL <code id="onbOverlayUrl">http://localhost:3001/overlay</code> (la copiás desde el pie de la app).</div>
       </div>
     </div>
     <button class="onb-btn" id="onbClose">¡Empezar!</button>
@@ -757,6 +771,18 @@
         <span style="color:var(--muted);font-size:11px">px</span>
       </div>
     </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-header">
+        <h2>Video Requests</h2>
+        <span class="exp-tag">experimental</span>
+      </div>
+      <label class="vr-toggle">
+        <input type="checkbox" id="vrEnabled" />
+        <span>Activar módulo</span>
+      </label>
+      <div class="vr-note" id="vrNote"></div>
+    </div>
   </aside>
 
   <section id="editor">
@@ -817,6 +843,12 @@
     invoke('open_url', { url: href }).catch(function(err) { alert('Error: ' + err); });
   });
 
+  // Base URL of this build's local server, asked to the backend at init so
+  // the port lives in exactly one place (server.rs). The literal below is
+  // only the fallback for when the command isn't reachable.
+  var SERVER  = 'http://127.0.0.1:3001';
+  var vrActive = false;   // is the Video Requests module live in this process?
+
   var cfg     = {};
   var videos  = [];
   var sel     = null;   // reward name currently selected
@@ -850,6 +882,12 @@
       cfg    = { rewards: {}, safeZones: { exclude: [] }, canvas: { width: 1920, height: 1080 } };
       videos = [];
     }
+    // This build's real address, and whether the Video Requests module
+    // booted with the process (the flag is only read at startup).
+    try { SERVER   = await invoke('server_url'); } catch (_) {}
+    try { vrActive = await invoke('video_requests_active'); } catch (_) {}
+    applyServerUrls();
+
     renderAll();
     initHistory();
 
@@ -891,6 +929,12 @@
     document.getElementById('addZoneBtn').addEventListener('click', function(){ toggleZoneForm(true); });
     document.getElementById('zfCancel').addEventListener('click', function(){ toggleZoneForm(false); });
     document.getElementById('zfSave').addEventListener('click', saveZone);
+    document.getElementById('vrEnabled').addEventListener('change', function() {
+      cfg.videoRequests = cfg.videoRequests || {};
+      cfg.videoRequests.enabled = this.checked;
+      markDirty();
+      renderVideoRequests();
+    });
     document.getElementById('canvasW').addEventListener('input', function(){ cfg.canvas.width = parseInt(this.value)||1920; markDirty(); });
     document.getElementById('canvasH').addEventListener('input', function(){ cfg.canvas.height = parseInt(this.value)||1080; markDirty(); });
     document.getElementById('openFolderBtn').addEventListener('click', function() {
@@ -1102,7 +1146,7 @@
 
   async function pingServer() {
     try {
-      var r = await fetch('http://127.0.0.1:3001/api/videos', { cache: 'no-store' });
+      var r = await fetch(SERVER + '/api/videos', { cache: 'no-store' });
       setConn(r.ok);
     } catch (_) { setConn(false); }
   }
@@ -1130,7 +1174,7 @@
     } else {
       wrap.className = 'warn';
       wrap.title = 'Ningún overlay conectado. En OBS: clic derecho en el Browser Source → Actualizar, '
-        + 'y verificá que la URL sea http://localhost:3001/overlay';
+        + 'y verificá que la URL sea ' + overlayUrl();
       dot.className = 'conn-dot warn';
       text.textContent = 'Sin overlay — revisá OBS';
     }
@@ -1267,6 +1311,7 @@
     renderTestSelect();
     renderZonesList();
     renderCanvas();
+    renderVideoRequests();
     if (sel !== null && cfg.rewards[sel]) {
       renderEditor(sel);
     } else {
@@ -1337,6 +1382,36 @@
     container.querySelectorAll('.del-btn').forEach(function(btn) {
       btn.addEventListener('click', function(e){ e.stopPropagation(); removeZone(parseInt(this.dataset.idx)); });
     });
+  }
+
+  // `localhost` reads better than `127.0.0.1` for something the streamer
+  // copies into OBS; both resolve to the same local server.
+  function overlayUrl() { return SERVER.replace('127.0.0.1', 'localhost') + '/overlay'; }
+
+  // Footer + onboarding must show THIS build's address, not a hardcoded one.
+  function applyServerUrls() {
+    document.getElementById('serverUrl').textContent  = SERVER.replace('127.0.0.1', 'localhost');
+    document.getElementById('overlayUrl').textContent = overlayUrl();
+    var onb = document.getElementById('onbOverlayUrl');
+    if (onb) onb.textContent = overlayUrl();
+  }
+
+  // The flag is read once at startup, so turning it on/off only takes
+  // effect after a restart. Saying so beats a toggle that silently lies.
+  function renderVideoRequests() {
+    var want = !!(cfg.videoRequests && cfg.videoRequests.enabled);
+    document.getElementById('vrEnabled').checked = want;
+    var note = document.getElementById('vrNote');
+    if (want !== vrActive) {
+      note.className = 'vr-note warn';
+      note.textContent = 'Guardá y reiniciá la app para aplicar el cambio.';
+    } else if (vrActive) {
+      note.className = 'vr-note on';
+      note.textContent = 'Módulo activo.';
+    } else {
+      note.className = 'vr-note';
+      note.textContent = 'Apagado: la app se comporta igual que la versión estable.';
+    }
   }
 
   function renderCanvas() {
@@ -1726,7 +1801,7 @@
     // Carga el contenido real del video (un frame) en el preview.
     if (firstVideo && vidEl && vidEl.dataset.src !== firstVideo) {
       vidEl.dataset.src = firstVideo;
-      vidEl.src = 'http://127.0.0.1:3001/' + firstVideo;
+      vidEl.src = SERVER + '/' + firstVideo;
       vidEl.addEventListener('loadeddata', function() {
         try { vidEl.currentTime = Math.min(0.1, (vidEl.duration || 1) / 2); } catch (_) {}
       }, { once: true });
@@ -2124,7 +2199,7 @@
     var probe = document.createElement('video');
     probe.preload = 'metadata';
     probe.muted = true;
-    probe.src = 'http://127.0.0.1:3001/' + path;
+    probe.src = SERVER + '/' + path;
     probe.addEventListener('loadedmetadata', function() {
       videoMetaCache[path] = {
         w: probe.videoWidth || 0,
