@@ -40,9 +40,14 @@ En <https://dev.twitch.tv/console/apps>, creá una app **confidencial**:
 
 ```bash
 npm install
-npx wrangler d1 create video-requests     # copiá el database_id a wrangler.toml
+cp wrangler.example.toml wrangler.toml     # la config real no se versiona
+npx wrangler d1 create video-requests      # copiá el database_id a wrangler.toml
 npm run db:remote                          # aplica schema.sql
 ```
+
+> `wrangler.toml` está en .gitignore: lleva el id de tu base D1, el Client ID de
+> tu app de Twitch y el subdominio de tu cuenta. Nada de eso es un secret, pero
+> tampoco hace falta publicarlo.
 
 ### 3. Variables y secrets
 

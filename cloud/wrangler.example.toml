@@ -1,3 +1,11 @@
+# PLANTILLA. Copiar a `wrangler.toml` y completar con los datos de tu cuenta:
+#
+#   cp wrangler.example.toml wrangler.toml
+#
+# `wrangler.toml` está en .gitignore porque lleva el id de tu base D1, el
+# Client ID de tu app de Twitch y el subdominio de tu cuenta de Cloudflare.
+# Nada de eso es un secret, pero tampoco hace falta publicarlo.
+
 name = "h0kd-video-requests"
 main = "src/index.ts"
 compatibility_date = "2026-01-01"
@@ -12,7 +20,7 @@ preview_urls = false
 [[d1_databases]]
 binding = "DB"
 database_name = "video-requests"
-database_id = "01f188c1-1d09-4315-9331-76f58b4ed3f6"
+database_id = "PEGAR_EL_ID_QUE_DEVUELVE_wrangler_d1_create"
 
 # ── Durable Object: un hub de WebSocket por canal ────────────────────────────
 [[durable_objects.bindings]]
@@ -27,13 +35,13 @@ new_sqlite_classes = ["ChannelHub"]
 
 [vars]
 # El Client ID de Twitch no es secreto (viaja en cada redirect de OAuth).
-TWITCH_CLIENT_ID = "t9xb4y1zr7v6u2yn2ndlyayx4tz6jt"
+TWITCH_CLIENT_ID = "PEGAR_EL_CLIENT_ID_DE_TU_APP_DE_TWITCH"
 # Origen público del Worker, usado para armar el redirect_uri de OAuth y la
 # URL del callback de EventSub. Sin barra final.
-PUBLIC_ORIGIN = "https://h0kd-video-requests.pomillo11.workers.dev"
+PUBLIC_ORIGIN = "https://TU-WORKER.workers.dev"
 # Beta cerrado: logins de Twitch separados por coma que pueden dar de alta su
 # canal desde /admin. Vacía = abierto (solo para desarrollo).
-ALLOWED_CHANNELS = "h0kd"
+ALLOWED_CHANNELS = ""
 
 # ── Secrets (NUNCA en este archivo) ──────────────────────────────────────────
 # Cargalos con `wrangler secret put <NOMBRE>`:

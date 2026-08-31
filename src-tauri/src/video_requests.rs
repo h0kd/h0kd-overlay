@@ -24,9 +24,11 @@ use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message;
 use video_requests_core as core;
 
-/// Origen del Worker por defecto. Se puede sobreescribir en config.json con
-/// `videoRequests.workerOrigin` para apuntar a otro despliegue.
-const DEFAULT_WORKER_ORIGIN: &str = "https://h0kd-video-requests.pomillo11.workers.dev";
+/// Origen del Worker. NO tiene valor por defecto a propósito: hardcodear un
+/// despliegue concreto en una app que se distribuye ataría a todos los usuarios
+/// al servidor de una sola persona. Cada quien pone el suyo en config.json,
+/// bajo `videoRequests.workerOrigin`.
+const WORKER_ORIGIN_KEY: &str = "videoRequests.workerOrigin";
 
 const WS_SUBPROTOCOL: &str = "h0kd-vr.1";
 const PROTOCOL_VERSION: u64 = 1;
@@ -144,7 +146,7 @@ fn worker_origin(data_dir: &Path) -> String {
         .as_str()
         .map(str::trim)
         .filter(|s| s.starts_with("https://"))
-        .unwrap_or(DEFAULT_WORKER_ORIGIN)
+        .unwrap_or_default()
         .trim_end_matches('/')
         .to_string()
 }
@@ -345,6 +347,11 @@ async fn handle_offline_cmd(
 /// Canjea el código de `/admin` por un token de agente.
 async fn pair(data_dir: &Path, code: &str) -> Result<Pairing, String> {
     let origin = worker_origin(data_dir);
+    if origin.is_empty() {
+        return Err(format!(
+            "Falta la dirección del servidor. Poné tu Worker en config.json, en {WORKER_ORIGIN_KEY}."
+        ));
+    }
     let client = reqwest::Client::new();
     let resp = client
         .post(format!("{origin}/agent/pair"))

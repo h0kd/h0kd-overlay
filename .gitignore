@@ -23,6 +23,9 @@ twitch.json
 # Cloudflare (cloud/)
 cloud/.wrangler/
 cloud/.dev.vars
+# La config real lleva el id de la base D1, el Client ID de la app de Twitch y
+# el subdominio de la cuenta. Se versiona wrangler.example.toml en su lugar.
+cloud/wrangler.toml
 # package-lock.json SI se commitea, por el mismo motivo que Cargo.lock:
 # esto es una aplicacion, y los builds tienen que ser reproducibles.
 
@@ -30,3 +33,8 @@ cloud/.dev.vars
 /CLAUDE.md
 /PLANNING.md
 /config.json
+# Notas de trabajo, contexto y pendientes: son para nosotros, no para el repo.
+/NOTAS.md
+/notas/
+/TODO.md
+/scratch/
