@@ -40,6 +40,16 @@ export const SCOPES = {
   broadcaster: 'moderation:read',
 } as const;
 
+/**
+ * Twitch explica en el body POR QUÉ rechazó (secret equivocado, redirect_uri
+ * que no coincide, code ya usado). Tragarse eso y reportar solo el status
+ * convierte cada problema de configuración en una adivinanza.
+ */
+async function twitchError(step: string, res: Response): Promise<string> {
+  const detail = await res.text().catch(() => '');
+  return `Twitch rechazó el ${step} (${res.status}): ${detail.slice(0, 300)}`;
+}
+
 export function authorizeUrl(env: Env, state: string, scope: string): string {
   const p = new URLSearchParams({
     client_id: env.TWITCH_CLIENT_ID,
@@ -54,7 +64,23 @@ export function authorizeUrl(env: Env, state: string, scope: string): string {
   return `${AUTHORIZE}?${p}`;
 }
 
+/**
+ * Un secret vacío es un modo de falla real: `wrangler secret put` sin terminal
+ * interactiva guarda una cadena vacía sin quejarse, y el nombre igual aparece
+ * en `secret list`. Sin este chequeo el síntoma es un 400 de Twitch que parece
+ * un problema de OAuth y no de configuración.
+ */
+function requireSecret(env: Env): void {
+  if (!env.TWITCH_CLIENT_SECRET) {
+    throw new Error(
+      'TWITCH_CLIENT_SECRET está vacío o sin cargar. Cargalo desde el dashboard ' +
+        'de Cloudflare o con `wrangler secret put` en una terminal real.',
+    );
+  }
+}
+
 export async function exchangeCode(env: Env, code: string): Promise<TokenPair> {
+  requireSecret(env);
   const res = await fetch(TOKEN, {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
@@ -66,11 +92,12 @@ export async function exchangeCode(env: Env, code: string): Promise<TokenPair> {
       redirect_uri: `${env.PUBLIC_ORIGIN}/auth/callback`,
     }),
   });
-  if (!res.ok) throw new Error(`Twitch rechazó el code (${res.status})`);
+  if (!res.ok) throw new Error(await twitchError('canje del code', res));
   return (await res.json()) as TokenPair;
 }
 
 export async function refreshToken(env: Env, refresh: string): Promise<TokenPair> {
+  requireSecret(env);
   const res = await fetch(TOKEN, {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
@@ -81,12 +108,13 @@ export async function refreshToken(env: Env, refresh: string): Promise<TokenPair
       refresh_token: refresh,
     }),
   });
-  if (!res.ok) throw new Error(`No se pudo renovar el token (${res.status})`);
+  if (!res.ok) throw new Error(await twitchError('refresh del token', res));
   return (await res.json()) as TokenPair;
 }
 
 /** App access token (client credentials), para administrar EventSub. */
 export async function appToken(env: Env): Promise<string> {
+  requireSecret(env);
   const res = await fetch(TOKEN, {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
@@ -96,7 +124,7 @@ export async function appToken(env: Env): Promise<string> {
       grant_type: 'client_credentials',
     }),
   });
-  if (!res.ok) throw new Error(`No se pudo obtener el app token (${res.status})`);
+  if (!res.ok) throw new Error(await twitchError('app token', res));
   return ((await res.json()) as { access_token: string }).access_token;
 }
 

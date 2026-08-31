@@ -134,6 +134,52 @@ app.get('/submit', (c) => c.html(submitPage()));
 app.get('/mod', (c) => c.html(modPage()));
 app.get('/admin', (c) => c.html(adminPage()));
 
+// ── Diagnóstico ──────────────────────────────────────────────────────────────
+
+/**
+ * Chequeo de configuración. Devuelve SOLO booleanos: nunca un valor, ni un
+ * prefijo, ni un largo.
+ *
+ * Existe porque `wrangler secret list` y el dashboard muestran el NOMBRE de un
+ * secret aunque su valor sea una cadena vacía, y `wrangler secret put` sin
+ * terminal interactiva guarda vacío sin quejarse. El resultado es un despliegue
+ * que parece completo y falla más tarde con un error que apunta a otro lado.
+ */
+app.get('/health', async (c) => {
+  const env = c.env;
+
+  // La clave de cifrado no alcanza con que exista: tiene que ser importable
+  // como AES-GCM de 32 bytes, o los tokens del broadcaster no se pueden guardar.
+  let tokenKeyUsable = false;
+  try {
+    await encryptToken(env.TOKEN_ENC_KEY ?? '', 'prueba');
+    tokenKeyUsable = true;
+  } catch {
+    tokenKeyUsable = false;
+  }
+
+  let dbOk = false;
+  try {
+    await env.DB.prepare('SELECT 1').first();
+    dbOk = true;
+  } catch {
+    dbOk = false;
+  }
+
+  const checks = {
+    twitch_client_id: !!env.TWITCH_CLIENT_ID && env.TWITCH_CLIENT_ID !== 'REEMPLAZAR',
+    twitch_client_secret: !!env.TWITCH_CLIENT_SECRET,
+    session_secret: !!env.SESSION_SECRET,
+    token_enc_key_usable: tokenKeyUsable,
+    eventsub_secret: !!env.EVENTSUB_SECRET,
+    public_origin: env.PUBLIC_ORIGIN === new URL(c.req.url).origin,
+    allowed_channels_set: !!(env.ALLOWED_CHANNELS ?? '').trim(),
+    database: dbOk,
+  };
+  const ok = Object.values(checks).every(Boolean);
+  return c.json({ ok, checks }, ok ? 200 : 503);
+});
+
 // ── OAuth ────────────────────────────────────────────────────────────────────
 
 app.get('/auth/login', async (c) => {
