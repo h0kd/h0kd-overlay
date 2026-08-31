@@ -1,3 +1,9 @@
+# El crate del pipeline vive en el workspace pero NO es dependencia de la app
+# todavía: se integra en la fase 4, detrás del feature flag. Así se puede
+# compilar y probar por CLI sin tocar el binario que ya funciona.
+[workspace]
+members = [".", "crates/video-requests-core"]
+
 [package]
 name = "stream-overlay"
 version = "0.2.9"

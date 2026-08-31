@@ -89,7 +89,7 @@ function el(tag, cls, text) {
   if (text !== undefined) n.textContent = text;   // nunca innerHTML con datos
   return n;
 }
-function dur(s) { return s == null ? '' : Math.round(s) + 's'; }
+function dur(s) { return s == null ? 'duración desconocida' : Math.round(s) + 's'; }
 function login(to) { location.href = '/auth/login?ch=' + encodeURIComponent(ch) + '&to=' + encodeURIComponent(to); }
 `;
 

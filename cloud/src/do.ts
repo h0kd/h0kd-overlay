@@ -220,8 +220,18 @@ export class ChannelHub implements DurableObject {
           thumbnail_url: msg.payload.thumbnail_url,
         });
         const settings = await q.getSettings(db, channelId);
-        const dur = msg.payload.duration_seconds ?? 0;
-        if (dur > settings.max_duration_seconds) {
+        const dur = msg.payload.duration_seconds;
+
+        // yt-dlp NO devuelve duración para los Reels de Instagram (verificado
+        // contra reels reales). O sea que el rechazo automático por duración no
+        // se puede aplicar justo en la plataforma prioritaria.
+        //
+        // No es un agujero: el límite duro lo impone ffmpeg al recodificar
+        // (`-t <max>`), así que nada más largo que el máximo llega nunca al
+        // overlay, se haya sabido la duración o no. Lo que se pierde es poder
+        // descartarlo ANTES de descargarlo. Cuando no se sabe, decide el mod,
+        // que puede ver el original.
+        if (dur !== undefined && dur > settings.max_duration_seconds) {
           await q.setStatus(db, channelId, item.id, 'rejected_auto', {
             error: `Dura ${Math.round(dur)}s; el máximo es ${settings.max_duration_seconds}s.`,
           });
