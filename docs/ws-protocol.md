@@ -382,6 +382,11 @@ Al reconectar: `hello` → `agent.ready` → el agente vacía el buffer → el D
 | `4426` | Versión de protocolo no soportada | **No reintentar.** Avisar "actualizá la app" |
 | `4429` | Demasiadas reconexiones | Reintentar con el backoff al tope (30 s) |
 
+Un token que ya era inválido **antes** del handshake no produce un código de
+cierre: el upgrade nunca ocurre y el Worker responde **HTTP 401**. El agente lo
+trata igual que `4401` (terminal, pedir emparejamiento de nuevo). El `4401` como
+código de cierre queda para la revocación en medio de una sesión ya abierta.
+
 Los tres `4401`/`4409`/`4426` son terminales: reintentarlos es ruido para el Worker y una
 UI que miente al streamer.
 

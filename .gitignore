@@ -20,6 +20,12 @@ twitch.json
 # macOS
 .DS_Store
 
+# Cloudflare (cloud/)
+cloud/.wrangler/
+cloud/.dev.vars
+# package-lock.json SI se commitea, por el mismo motivo que Cargo.lock:
+# esto es una aplicacion, y los builds tienen que ser reproducibles.
+
 # Dev-only / personal (kept local, not in the public repo)
 /CLAUDE.md
 /PLANNING.md
