@@ -228,6 +228,28 @@
   .vr-card ul { margin: 0 0 4px 18px; color: var(--muted); font-size: 12.5px; line-height: 1.9; }
   .vr-card code { background: var(--s2); padding: 1px 5px; border-radius: 4px; font-size: 11.5px; }
   .vr-foot { color: var(--muted); font-size: 12px; margin-top: 12px; }
+  .vr-row { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+  .vr-row input[type=text] {
+    flex: 1; background: var(--s2); border: 1px solid var(--border); color: var(--text);
+    border-radius: 6px; padding: 9px 11px; font: inherit; letter-spacing: .1em;
+    text-transform: uppercase;
+  }
+  .vr-row input:focus { outline: none; border-color: var(--accent); }
+  .vr-btn {
+    background: var(--accent); color: #fff; border: none; border-radius: 6px;
+    padding: 9px 16px; font: inherit; font-weight: 600; cursor: pointer;
+  }
+  .vr-btn:hover:not(:disabled) { background: var(--accentH); }
+  .vr-btn:disabled { opacity: .45; cursor: default; }
+  .vr-btn.secondary { background: var(--s2); border: 1px solid var(--border); color: var(--text); }
+  .vr-kv { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0;
+    border-top: 1px solid var(--border); font-size: 12.5px; }
+  .vr-kv:first-of-type { border-top: none; }
+  .vr-kv span:first-child { color: var(--muted); }
+  .vr-err {
+    margin-top: 12px; font-size: 12.5px; padding: 9px 12px; border-radius: 6px;
+    background: #3a1212; color: #ffbcbc; line-height: 1.5;
+  }
   .vr-state {
     font-size: 11px; padding: 3px 10px; border-radius: 999px;
     background: var(--s2); color: var(--muted); white-space: nowrap;
@@ -848,14 +870,39 @@
       <div class="vr-note" id="vrNote"></div>
     </div>
 
-    <div class="vr-card">
-      <h3>Todavía no implementado</h3>
-      <ul>
-        <li>Emparejamiento con la nube (código generado desde <code>/admin</code>)</li>
-        <li>Estado de las cookies de Instagram</li>
-        <li>Cola de pedidos, progreso de descarga y errores del pipeline</li>
-      </ul>
-      <p class="vr-foot">Fase 1 de 5: por ahora el módulo solo se activa y se desactiva.</p>
+    <div class="vr-card" id="vrPairCard" style="display:none">
+      <div class="vr-card-head">
+        <h3 style="margin:0">Emparejar con tu canal</h3>
+        <span class="vr-state" id="vrConn">—</span>
+      </div>
+      <p class="vr-lead" style="margin-top:8px" id="vrPairHelp">
+        Entrá a <code>/admin</code> con la cuenta del canal, generá un código y pegalo acá.
+      </p>
+      <div class="vr-row" id="vrPairRow">
+        <input type="text" id="vrCode" placeholder="A1B2C3D4" maxlength="8" autocomplete="off" />
+        <button class="vr-btn" id="vrPairBtn">Emparejar</button>
+      </div>
+      <div class="vr-row" id="vrUnpairRow" style="display:none">
+        <button class="vr-btn secondary" id="vrUnpairBtn">Desemparejar</button>
+      </div>
+      <div class="vr-err" id="vrError" style="display:none"></div>
+    </div>
+
+    <div class="vr-card" id="vrEnvCard" style="display:none">
+      <h3>Entorno</h3>
+      <div class="vr-kv"><span>yt-dlp</span><span id="vrYtdlp">—</span></div>
+      <div class="vr-kv"><span>ffmpeg / ffprobe</span><span id="vrBins">—</span></div>
+      <div class="vr-kv"><span>Cookies de Instagram</span><span id="vrCookies">—</span></div>
+      <div class="vr-kv"><span>En cola</span><span id="vrQueue">—</span></div>
+      <div class="vr-row">
+        <button class="vr-btn secondary" id="vrInstallBtn">Instalar lo que falte</button>
+        <button class="vr-btn secondary" id="vrUpdateBtn">Actualizar yt-dlp</button>
+        <button class="vr-btn secondary" id="vrCookiesBtn">Abrir carpeta de cookies</button>
+      </div>
+      <p class="vr-foot">
+        Instagram necesita las cookies de una cuenta <b>dedicada</b> (nunca la personal),
+        exportadas en formato Netscape como <code>instagram-cookies.txt</code>.
+      </p>
     </div>
   </section>
 </main>
@@ -915,6 +962,7 @@
   var SERVER  = 'http://127.0.0.1:3001';
   var vrActive = false;   // is the Video Requests module live in this process?
   var view    = 'overlay';   // 'overlay' | 'vr' — which half of the app is showing
+  var vrLastSig = '';        // firma del último estado pintado, para no re-render
 
   var cfg     = {};
   var videos  = [];
@@ -1000,6 +1048,24 @@
       tab.addEventListener('click', function() { setView(tab.getAttribute('data-view')); });
     });
     setView('overlay');
+    document.getElementById('vrPairBtn').addEventListener('click', vrPair);
+    document.getElementById('vrCode').addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') vrPair();
+    });
+    document.getElementById('vrUnpairBtn').addEventListener('click', function() {
+      invoke('vr_unpair').catch(function(e) { vrShowError(e); });
+    });
+    document.getElementById('vrInstallBtn').addEventListener('click', function() {
+      vrRun(this, 'vr_install_binaries', 'Instalando…');
+    });
+    document.getElementById('vrUpdateBtn').addEventListener('click', function() {
+      vrRun(this, 'vr_update_ytdlp', 'Actualizando…');
+    });
+    document.getElementById('vrCookiesBtn').addEventListener('click', function() {
+      invoke('vr_open_cookies_dir').catch(function(e) { vrShowError(e); });
+    });
+    // El estado del módulo solo se consulta si está corriendo en este proceso.
+    if (vrActive) { pollVr(); setInterval(pollVr, 2000); }
     document.getElementById('vrEnabled').addEventListener('change', function() {
       cfg.videoRequests = cfg.videoRequests || {};
       cfg.videoRequests.enabled = this.checked;
@@ -1465,6 +1531,79 @@
     document.getElementById('overlayUrl').textContent = overlayUrl();
     var onb = document.getElementById('onbOverlayUrl');
     if (onb) onb.textContent = overlayUrl();
+  }
+
+  // ── Video Requests: estado del módulo ─────────────────────────────────────
+
+  function vrShowError(msg) {
+    var box = document.getElementById('vrError');
+    box.textContent = String(msg);
+    box.style.display = msg ? '' : 'none';
+  }
+
+  async function vrPair() {
+    var input = document.getElementById('vrCode');
+    var code = (input.value || '').trim();
+    if (!code) return;
+    var btn = document.getElementById('vrPairBtn');
+    btn.disabled = true; btn.textContent = 'Emparejando…';
+    vrShowError('');
+    try {
+      await invoke('vr_pair', { code: code });
+      input.value = '';
+    } catch (e) { vrShowError(e); }
+    btn.disabled = false; btn.textContent = 'Emparejar';
+  }
+
+  async function vrRun(btn, command, busyText) {
+    var orig = btn.textContent;
+    btn.disabled = true; btn.textContent = busyText;
+    vrShowError('');
+    try { await invoke(command); } catch (e) { vrShowError(e); }
+    btn.disabled = false; btn.textContent = orig;
+  }
+
+  var VR_CONN = {
+    unpaired:   ['vr-state',      'sin emparejar'],
+    connecting: ['vr-state warn', 'conectando…'],
+    connected:  ['vr-state on',   'conectado'],
+    error:      ['vr-state warn', 'con problemas']
+  };
+
+  async function pollVr() {
+    var st;
+    try { st = await invoke('vr_status'); } catch (_) { return; }
+
+    // Firma para no repintar en cada poll: el usuario podría estar tipeando el
+    // código y no queremos pisarle el input ni el foco.
+    var sig = JSON.stringify(st);
+    if (sig === vrLastSig) return;
+    vrLastSig = sig;
+
+    document.getElementById('vrPairCard').style.display = '';
+    document.getElementById('vrEnvCard').style.display = '';
+
+    var conn = VR_CONN[st.state] || VR_CONN.unpaired;
+    var pill = document.getElementById('vrConn');
+    pill.className = conn[0];
+    pill.textContent = st.channelLogin && st.state !== 'unpaired'
+      ? (conn[1] + ' · ' + st.channelLogin) : conn[1];
+
+    var paired = st.state !== 'unpaired';
+    document.getElementById('vrPairRow').style.display = paired ? 'none' : '';
+    document.getElementById('vrUnpairRow').style.display = paired ? '' : 'none';
+    document.getElementById('vrPairHelp').style.display = paired ? 'none' : '';
+
+    document.getElementById('vrYtdlp').textContent = st.ytdlpVersion || 'no encontrado';
+    document.getElementById('vrBins').textContent = st.binariesOk ? 'listos' : 'faltan';
+    document.getElementById('vrCookies').textContent =
+      st.cookiesState === 'ok' ? 'cargadas'
+      : st.cookiesState === 'expired' ? 'VENCIDAS — renovalas'
+      : 'sin cargar';
+    document.getElementById('vrQueue').textContent =
+      st.queueLen + (st.nowPlaying ? ' (reproduciendo uno)' : '');
+
+    vrShowError(st.error || '');
   }
 
   // The two halves of the app are separate views, not sections of one page:

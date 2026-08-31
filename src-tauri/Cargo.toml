@@ -35,6 +35,9 @@ tower-http = { version = "0.5", features = ["fs", "cors"] }
 futures-util = "0.3"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 tokio-tungstenite = { version = "0.24", default-features = false, features = ["connect", "rustls-tls-webpki-roots"] }
+# El pipeline vive aparte y sin dependencias de Tauri. Se enlaza siempre,
+# pero no se inicializa nada suyo si el flag esta apagado.
+video-requests-core = { path = "crates/video-requests-core" }
 
 [profile.release]
 opt-level = "s"

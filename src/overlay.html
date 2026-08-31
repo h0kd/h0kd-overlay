@@ -50,6 +50,30 @@
     @keyframes outSlideLeft  { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateX(-50px); } }
     @keyframes outSlideRight { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateX(50px); } }
 
+    /* ── Video Requests ──────────────────────────────────────────────────────
+       Contenedor propio, centrado y aparte del spawn aleatorio de los canjes.
+       `object-fit: contain` es lo que deja convivir Reels verticales 9:16 con
+       clips horizontales 16:9 sin deformar ninguno: el video se acomoda dentro
+       de la caja y sobra espacio por donde tenga que sobrar. */
+    #vrStage {
+      position: absolute;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      pointer-events: none;
+    }
+    #vrStage.on { display: flex; }
+    #vrStage video {
+      max-width: 62%;
+      max-height: 80%;
+      object-fit: contain;
+      border-radius: 10px;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, .55);
+      animation: inPop 0.28s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+    }
+    #vrStage.leaving video { animation: outPop 0.25s ease-in forwards; }
+
     /* ── Setup status badge ──────────────────────────────────────────────────
        Visible ONLY while configuring (page load → first successful connection).
        After the overlay connects once it is removed for good, so it can never
@@ -84,6 +108,7 @@
 </head>
 <body>
   <div id="overlay"></div>
+  <div id="vrStage"></div>
   <div id="setupStatus"><span class="dot"></span><span id="setupStatusText">Conectando al servidor…</span></div>
 
   <script>
@@ -116,6 +141,80 @@
       slideLeft:  'outSlideLeft 0.35s ease-in forwards',
       slideRight: 'outSlideRight 0.35s ease-in forwards'
     };
+
+    // ── Video Requests ───────────────────────────────────────────────────────
+    // El agente necesita saber cuándo la pantalla quedó libre para largar el
+    // siguiente pedido. Se lo decimos nosotros en vez de que lo adivine por
+    // duración: un video que falla al cargar termina en 0s y uno con audio
+    // desincronizado dura más de lo que decía su metadata.
+    let vrPlaying = null;        // itemId en pantalla, o null
+    let vrLastBusy = null;       // último valor reportado, para no repetir
+
+    function overlayBusy() {
+      return document.querySelectorAll('.video-spawn').length > 0 || vrPlaying !== null;
+    }
+
+    function reportBusy() {
+      const busy = overlayBusy();
+      if (busy === vrLastBusy) return;
+      vrLastBusy = busy;
+      wsSend({ type: 'overlayBusy', busy: busy });
+    }
+
+    function wsSend(obj) {
+      if (!ws || ws.readyState !== 1) return;
+      try { ws.send(JSON.stringify(obj)); } catch (_) {}
+    }
+
+    function playRequest(data) {
+      const stage = document.getElementById('vrStage');
+      stage.textContent = '';
+      stage.classList.remove('leaving');
+      stage.classList.add('on');
+
+      const video = document.createElement('video');
+      video.src = data.src;
+      video.autoplay = true;
+      video.playsInline = true;
+      video.volume = 1.0;
+
+      let done = false;
+      const started = Date.now();
+      function finish(reason) {
+        if (done) return;
+        done = true;
+        clearTimeout(guard);
+        stage.classList.add('leaving');
+        setTimeout(function () {
+          stage.classList.remove('on', 'leaving');
+          stage.textContent = '';
+        }, 300);
+        const seconds = (Date.now() - started) / 1000;
+        vrPlaying = null;
+        wsSend({ type: 'requestEnded', itemId: data.itemId, seconds: seconds, reason: reason });
+        reportBusy();
+      }
+
+      // Red de contención: si el archivo no dispara 'ended' (códec raro, red
+      // cortada), el pedido no puede quedarse trabado para siempre bloqueando
+      // la cola entera.
+      const guard = setTimeout(function () {
+        warn('Video request sin \'ended\'; se cierra por tiempo:', data.itemId);
+        finish('error');
+      }, 60000);
+
+      video.addEventListener('ended', function () { finish('ended'); });
+      video.addEventListener('error', function () {
+        err('No se pudo reproducir el pedido:', data.src);
+        finish('error');
+      });
+
+      stage.appendChild(video);
+      vrPlaying = data.itemId;
+      wsSend({ type: 'requestStarted', itemId: data.itemId });
+      reportBusy();
+      log('Video request en pantalla:', data.itemId);
+    }
 
     // ── State ────────────────────────────────────────────────────────────────
     let config = {
@@ -269,7 +368,10 @@
         if (cleaning) return;   // 'ended' + safety timer pueden dispararse juntos
         cleaning = true;
         clearTimeout(safetyTimer);
-        const removeEl = () => { if (wrapper.parentNode) wrapper.remove(); };
+        const removeEl = () => {
+          if (wrapper.parentNode) wrapper.remove();
+          reportBusy();
+        };
         const out = OUT_ANIMS[animOut];
         if (animOut !== 'none' && out) {
           wrapper.style.animation = out;
@@ -290,6 +392,7 @@
 
       wrapper.appendChild(video);
       document.getElementById('overlay').appendChild(wrapper);
+      reportBusy();
     }
 
     // Exposed for manual console testing (step 8.3 of planning doc)
@@ -310,6 +413,9 @@
         logWS('Connected to admin server');
         clearTimeout(wsReconnectTimer);
         setupBadge.connected();
+        // El agente puede haberse reiniciado y no saber qué hay en pantalla.
+        vrLastBusy = null;
+        reportBusy();
       };
 
       ws.onmessage = (ev) => {
@@ -322,6 +428,8 @@
             && data.action === 'playVideo' && data.reward) {
           log(`playVideo: "${data.reward}" por ${data.user || '?'}`);
           spawnVideo(data.reward);
+        } else if (event.source === 'VideoRequests' && data.action === 'playRequest') {
+          playRequest(data);
         } else if (data.action === 'reloadConfig') {
           log('Config reload solicitado por el panel');
           loadConfig();

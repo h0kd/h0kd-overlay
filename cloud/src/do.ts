@@ -18,6 +18,7 @@ import {
   CLOSE,
   envelope,
   parseFromAgent,
+  WS_SUBPROTOCOL,
   type ChannelSettings,
   type FromAgent,
   type ResyncItem,
@@ -98,6 +99,21 @@ export class ChannelHub implements DurableObject {
     if (request.headers.get('Upgrade') !== 'websocket') {
       return new Response('se esperaba un upgrade a websocket', { status: 426 });
     }
+
+    // Si el cliente pide un subprotocolo hay que confirmarlo en el 101, o el
+    // handshake es invalido y un cliente estricto lo rechaza. El agente (Rust)
+    // lo pide para declarar la version; los mods (navegador) no piden ninguno.
+    const offered = (request.headers.get('Sec-WebSocket-Protocol') ?? '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (offered.length && !offered.includes(WS_SUBPROTOCOL)) {
+      return new Response('version de protocolo no soportada', { status: 426 });
+    }
+    const headers: Record<string, string> = offered.length
+      ? { 'Sec-WebSocket-Protocol': WS_SUBPROTOCOL }
+      : {};
+
     const pair = new WebSocketPair();
     const [client, server] = [pair[0], pair[1]];
 
@@ -116,7 +132,7 @@ export class ChannelHub implements DurableObject {
     this.ctx.acceptWebSocket(server, [tag]);
     // El saludo se manda fuera del camino de respuesta para no demorar el 101.
     this.ctx.waitUntil(tag === TAG_AGENT ? this.greetAgent(server) : this.greetMod(server));
-    return new Response(null, { status: 101, webSocket: client });
+    return new Response(null, { status: 101, webSocket: client, headers });
   }
 
   // ── Saludos ────────────────────────────────────────────────────────────────
@@ -134,6 +150,11 @@ export class ChannelHub implements DurableObject {
       stream_online: settings.submissions_open,
     }));
     await this.sendResync(ws);
+    // Lo que entró mientras el agente estaba caído quedó en `submitted`: sin
+    // metadata no entra en el resync y nadie más lo va a pedir. Si no se
+    // despacha acá, esos pedidos quedan huérfanos para siempre y el viewer ve
+    // "leyendo el video…" hasta que termine el stream.
+    await this.dispatchPending();
     await this.setAgentSnapshot({ online: true, updated_at: Date.now() });
     await this.pushAgentStateToMods();
   }

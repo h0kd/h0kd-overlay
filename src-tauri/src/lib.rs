@@ -1,5 +1,6 @@
 mod server;
 mod twitch;
+mod video_requests;
 
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
@@ -17,6 +18,12 @@ pub struct AppState {
     /// signal: an HTTP ping to the port can succeed against a *different* process
     /// (e.g. a stale instance) and falsely look healthy.
     pub server_health: Arc<Mutex<ServerHealth>>,
+    /// Canal de comandos del módulo Video Requests. `None` cuando el flag
+    /// está apagado, que es lo que hace verificable la regla "apagado = igual
+    /// que la versión estable": sin este Sender no hay a quién hablarle.
+    pub vr_cmd: Option<mpsc::Sender<video_requests::VrCmd>>,
+    /// Estado del módulo, para que la UI lo lea por polling.
+    pub video_requests: Option<video_requests::SharedVrStatus>,
     /// Video Requests feature flag, read ONCE at startup from
     /// `videoRequests.enabled`. False means the module is never
     /// constructed: no sidecars, no cloud WebSocket, no extra routes, no
@@ -291,6 +298,56 @@ fn video_requests_active(state: tauri::State<AppState>) -> bool {
     state.video_requests_enabled
 }
 
+// ── Video Requests (experimental) ────────────────────────────────────────────
+
+/// Estado del módulo para la UI. Con el flag apagado devuelve el estado por
+/// defecto en vez de fallar: la sección existe siempre, el módulo no.
+#[tauri::command]
+fn vr_status(state: tauri::State<AppState>) -> video_requests::VrStatus {
+    match &state.video_requests {
+        Some(s) => s.lock().map(|v| v.clone()).unwrap_or_default(),
+        None => video_requests::VrStatus::default(),
+    }
+}
+
+async fn vr_send(state: &AppState, cmd: video_requests::VrCmd) -> Result<(), String> {
+    let tx = state
+        .vr_cmd
+        .clone()
+        .ok_or_else(|| "El módulo está apagado. Activalo y reiniciá la app.".to_string())?;
+    tx.send(cmd).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn vr_pair(state: tauri::State<'_, AppState>, code: String) -> Result<(), String> {
+    vr_send(&state, video_requests::VrCmd::Pair(code)).await
+}
+
+#[tauri::command]
+async fn vr_unpair(state: tauri::State<'_, AppState>) -> Result<(), String> {
+    vr_send(&state, video_requests::VrCmd::Unpair).await
+}
+
+#[tauri::command]
+async fn vr_install_binaries(state: tauri::State<'_, AppState>) -> Result<(), String> {
+    vr_send(&state, video_requests::VrCmd::InstallBinaries).await
+}
+
+#[tauri::command]
+async fn vr_update_ytdlp(state: tauri::State<'_, AppState>) -> Result<(), String> {
+    vr_send(&state, video_requests::VrCmd::UpdateYtdlp).await
+}
+
+/// Abre la carpeta donde va el archivo de cookies de Instagram, creándola si
+/// hace falta. Explicarle a alguien cómo llegar a %APPDATA% a mano es fricción
+/// gratis.
+#[tauri::command]
+fn vr_open_cookies_dir(state: tauri::State<AppState>) -> Result<(), String> {
+    let dir = state.data_dir.join("video-requests");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    open::that(&dir).map_err(|e| e.to_string())
+}
+
 // ── Auto-update (tauri-plugin-updater) ───────────────────────────────────────
 
 #[derive(serde::Serialize)]
@@ -374,12 +431,25 @@ pub fn run() {
     let twitch_shared = Arc::new(Mutex::new(TwitchStatus::default()));
     let (twitch_cmd, twitch_rx) = mpsc::channel::<TwitchCmd>(8);
 
+    // Con el flag apagado esto queda en `None` y el worker no se lanza: no hay
+    // WebSocket a la nube, no hay procesos hijo y no se registran rutas nuevas.
+    let (vr_cmd, vr_rx) = if video_requests_enabled {
+        let (tx, rx) = mpsc::channel::<video_requests::VrCmd>(32);
+        (Some(tx), Some(rx))
+    } else {
+        (None, None)
+    };
+    let vr_shared = video_requests_enabled
+        .then(|| Arc::new(Mutex::new(video_requests::VrStatus::default())));
+
     let state = AppState {
         tx: tx.clone(),
         data_dir: data_dir.clone(),
         twitch: twitch_shared,
         twitch_cmd,
         server_health: Arc::new(Mutex::new(ServerHealth::Starting)),
+        vr_cmd,
+        video_requests: vr_shared,
         video_requests_enabled,
     };
 
@@ -420,6 +490,12 @@ pub fn run() {
             // Twitch EventSub worker: connects to Twitch and broadcasts redemptions.
             let twitch_state = state.clone();
             tauri::async_runtime::spawn(twitch::worker_loop(twitch_state, twitch_rx));
+
+            // Solo existe si el flag estaba encendido al arrancar.
+            if let Some(rx) = vr_rx {
+                let vr_state = state.clone();
+                tauri::async_runtime::spawn(video_requests::worker_loop(vr_state, rx));
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -433,6 +509,12 @@ pub fn run() {
             open_url,
             server_url,
             video_requests_active,
+            vr_status,
+            vr_pair,
+            vr_unpair,
+            vr_install_binaries,
+            vr_update_ytdlp,
+            vr_open_cookies_dir,
             twitch_status,
             twitch_set_client_id,
             twitch_connect,

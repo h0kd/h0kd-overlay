@@ -3736,6 +3736,7 @@ dependencies = [
  "tokio",
  "tokio-tungstenite",
  "tower-http 0.5.2",
+ "video-requests-core",
 ]
 
 [[package]]

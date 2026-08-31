@@ -25,15 +25,24 @@ pub async fn start(state: AppState) -> std::io::Result<()> {
     let videos_dir = state.data_dir.join("videos");
     let health = state.server_health.clone();
 
-    let app = Router::new()
+    // Los mp4 de los pedidos se sirven desde una carpeta APARTE de videos/.
+    // Mezclarlos haría que aparezcan en el desplegable de rewards del panel,
+    // que lista esa carpeta entera.
+    let mut app = Router::new()
         .route("/", get(root_handler))
         .route("/overlay", get(serve_overlay))
         .route("/config.json", get(serve_config_json))
         .route("/api/config", get(get_config_handler).post(post_config_handler))
         .route("/api/videos", get(list_videos_handler))
-        .nest_service("/videos", ServeDir::new(videos_dir))
-        .layer(CorsLayer::permissive())
-        .with_state(state);
+        .nest_service("/videos", ServeDir::new(videos_dir));
+
+    if state.video_requests_enabled {
+        let media = crate::video_requests::media_dir(&state.data_dir);
+        let _ = std::fs::create_dir_all(&media);
+        app = app.nest_service("/video-requests", ServeDir::new(media));
+    }
+
+    let app = app.layer(CorsLayer::permissive()).with_state(state);
 
     let bind = format!("127.0.0.1:{}", SERVER_PORT);
     // `?` propagates AddrInUse to the caller, which records it as ServerHealth::Error.
@@ -56,7 +65,8 @@ async fn root_handler(State(state): State<AppState>, ws: Option<WebSocketUpgrade
     match ws {
         Some(upgrade) => {
             let tx = state.tx.clone();
-            upgrade.on_upgrade(move |socket| handle_ws(socket, tx))
+            let vr = state.vr_cmd.clone();
+            upgrade.on_upgrade(move |socket| handle_ws(socket, tx, vr))
         }
         None => Html(
             r#"<!doctype html><meta charset="utf-8"><title>Stream Overlay</title>
@@ -73,7 +83,11 @@ async fn root_handler(State(state): State<AppState>, ws: Option<WebSocketUpgrade
     }
 }
 
-async fn handle_ws(socket: WebSocket, tx: tokio::sync::broadcast::Sender<String>) {
+async fn handle_ws(
+    socket: WebSocket,
+    tx: tokio::sync::broadcast::Sender<String>,
+    vr: Option<tokio::sync::mpsc::Sender<crate::video_requests::VrCmd>>,
+) {
     let (mut sink, mut stream) = socket.split();
     let mut rx = tx.subscribe();
 
@@ -94,6 +108,16 @@ async fn handle_ws(socket: WebSocket, tx: tokio::sync::broadcast::Sender<String>
         while let Some(msg) = stream.next().await {
             match msg {
                 Ok(Message::Close(_)) | Err(_) => break,
+                // El overlay avisa qué está mostrando. Es lo que le permite al
+                // agente saber cuándo la pantalla quedó libre: sin esto, el
+                // arbitraje tendría que adivinar por duración.
+                Ok(Message::Text(txt)) => {
+                    if let Some(vr) = vr.as_ref() {
+                        if let Some(ev) = parse_overlay_event(&txt) {
+                            let _ = vr.send(crate::video_requests::VrCmd::Overlay(ev)).await;
+                        }
+                    }
+                }
                 _ => {}
             }
         }
@@ -126,6 +150,22 @@ async fn handle_ws(socket: WebSocket, tx: tokio::sync::broadcast::Sender<String>
         _ = &mut write => { read.abort();  }
     }
     println!("[WS] Overlay desconectado. Total: {}", tx.receiver_count().saturating_sub(1));
+}
+
+/// Traduce lo que manda el overlay. Devuelve `None` para cualquier cosa que
+/// no se reconozca: un mensaje raro del navegador no puede tumbar nada.
+fn parse_overlay_event(txt: &str) -> Option<crate::video_requests::OverlayEvent> {
+    use crate::video_requests::OverlayEvent;
+    let v: serde_json::Value = serde_json::from_str(txt).ok()?;
+    match v["type"].as_str()? {
+        "overlayBusy" => Some(OverlayEvent::Busy(v["busy"].as_bool()?)),
+        "requestStarted" => Some(OverlayEvent::RequestStarted(v["itemId"].as_str()?.to_string())),
+        "requestEnded" => Some(OverlayEvent::RequestEnded {
+            item_id: v["itemId"].as_str()?.to_string(),
+            seconds: v["seconds"].as_f64().unwrap_or(0.0),
+        }),
+        _ => None,
+    }
 }
 
 // ── /overlay ────────────────────────────────────────────────────────────────
