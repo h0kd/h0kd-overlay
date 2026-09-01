@@ -247,6 +247,12 @@ const CSS = `
   .link-title { font-weight: 600; font-size: 16px; line-height: 1.35; }
   .link-meta { color: var(--muted); font-size: 13.5px; display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: center; }
   .link-meta .net-name { display: inline-flex; align-items: center; gap: 6px; }
+  /* El envoltorio que hace clickeable la miniatura y la URL: no tiene que
+     parecer un link hasta que lo apuntás, o la fila se llena de color. */
+  a.ir { color: inherit; text-decoration: none; }
+  a.ir:hover { color: var(--accent); text-decoration: underline; }
+  a.thumb { display: block; }
+  a.thumb:hover { outline: 2px solid var(--accent); outline-offset: 2px; }
   .link-meta svg { width: 14px; height: 14px; }
   .byline { display: flex; align-items: center; gap: 9px; color: var(--muted); font-size: 13.5px; }
   .byline .avatar { width: 24px; height: 24px; font-size: 10.5px; }
@@ -684,8 +690,17 @@ function tonoDe(id) {
   return 't-' + (n % 8 + 1);
 }
 /** Miniatura: la imagen real si la hay, y si no un degradado con el play. */
-function miniatura(it, ancha) {
-  const box = el('div', 'thumb' + (ancha ? ' wide' : ''));
+function miniatura(it, ancha, href) {
+  // Si va enlazada, la miniatura misma es el <a>. Envolverla en uno rompe su
+  // caja: el ancla no toma la altura que le da el aspect-ratio y el recuadro se
+  // sale de la tarjeta.
+  const box = el(href ? 'a' : 'div', 'thumb' + (ancha ? ' wide' : ''));
+  if (href) {
+    box.href = href;
+    box.target = '_blank';
+    box.rel = 'noopener noreferrer';
+    box.title = 'Ver el original en ' + it.platform;
+  }
   if (it.thumbnail_url) {
     const img = document.createElement('img');
     img.src = it.thumbnail_url;
@@ -825,13 +840,24 @@ const VISTA = {
     for (const it of visibles) {
       const v = VISTA[it.status] || ['', it.status, ''];
       const row = el('article', 'card link-row');
-      row.appendChild(miniatura(it, it.platform !== 'instagram' && it.platform !== 'tiktok'));
+      // La miniatura y la URL llevan al original. Es lo primero que uno quiere
+      // cuando ve su propio envío: volver a mirar qué mandó.
+      const alOriginal = (nodo) => {
+        const a = el('a', 'ir');
+        a.href = it.source_url;
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+        a.title = 'Ver el original en ' + it.platform;
+        a.appendChild(nodo);
+        return a;
+      };
+      row.appendChild(miniatura(it, it.platform !== 'instagram' && it.platform !== 'tiktok', it.source_url));
 
       const body = el('div', 'link-body');
       body.appendChild(el('div', 'link-title', it.title || urlCorta(it.source_url)));
 
       const meta = el('div', 'link-meta');
-      meta.appendChild(el('span', 'mono', urlCorta(it.source_url)));
+      meta.appendChild(alOriginal(el('span', 'mono', urlCorta(it.source_url))));
       meta.appendChild(el('span', null, 'Enviado ' + hace(it.created_at)));
       body.appendChild(meta);
 
