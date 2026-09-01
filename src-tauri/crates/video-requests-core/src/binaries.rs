@@ -104,6 +104,33 @@ pub async fn install_missing(data_dir: &Path) -> Result<Vec<String>> {
     Ok(done)
 }
 
+/// Deja el yt-dlp de la app en la última versión, venga de donde venga.
+///
+/// Si el que se está usando es el nuestro, `yt-dlp -U` alcanza. Si salió del
+/// PATH no se lo toca: puede ser uno instalado con pip, donde `-U` ni siquiera
+/// funciona, y actualizarle el binario a alguien por debajo es de mala
+/// educación. En ese caso se baja el propio, que a partir de ahí tiene
+/// prioridad. Es el caso real que rompió TikTok: un yt-dlp del sistema de hace
+/// mes y medio que ya no podía con la plataforma.
+pub async fn update_ytdlp(data_dir: &Path) -> Result<String> {
+    let dir = bin_dir(data_dir);
+    let propio = dir.join(exe("yt-dlp"));
+    if propio.is_file() {
+        return crate::ytdlp::self_update(&propio).await;
+    }
+    if !cfg!(windows) {
+        return Err(ErrorDetail::new(
+            ErrorCode::BinaryMissing,
+            "El yt-dlp en uso es el del sistema: actualizalo con el gestor de paquetes con el que lo instalaste.",
+        ));
+    }
+    std::fs::create_dir_all(&dir).map_err(|e| {
+        ErrorDetail::new(ErrorCode::DiskFull, format!("No se pudo crear {}: {e}", dir.display()))
+    })?;
+    install_ytdlp(&dir).await?;
+    Ok("Se bajó el yt-dlp propio de la app; de acá en más se usa ese.".to_string())
+}
+
 async fn install_ytdlp(dir: &Path) -> Result<()> {
     let dest = dir.join(exe("yt-dlp"));
     let tmp = dir.join("yt-dlp.download");

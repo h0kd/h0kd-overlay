@@ -478,8 +478,7 @@ fn spawn_binaries_job(data_dir: &Path, shared: &SharedVrStatus, job: BinariesJob
         let outcome = match job {
             BinariesJob::Install => core::binaries::install_missing(&data_dir).await.map(|_| ()),
             BinariesJob::UpdateYtdlp => {
-                let bins = core::binaries::resolve(&data_dir);
-                core::ytdlp::self_update(&bins.ytdlp).await.map(|_| ())
+                core::binaries::update_ytdlp(&data_dir).await.map(|_| ())
             }
         };
         if let Err(e) = outcome {

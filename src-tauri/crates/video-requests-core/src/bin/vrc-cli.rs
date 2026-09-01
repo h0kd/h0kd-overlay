@@ -223,8 +223,7 @@ async fn cmd_install(data_dir: &Path) -> std::result::Result<(), String> {
 }
 
 async fn cmd_update(data_dir: &Path) -> std::result::Result<(), String> {
-    let bins = core::binaries::resolve(data_dir);
-    match core::ytdlp::self_update(&bins.ytdlp).await {
+    match core::binaries::update_ytdlp(data_dir).await {
         Ok(out) => {
             println!("{}", out.trim());
             Ok(())
