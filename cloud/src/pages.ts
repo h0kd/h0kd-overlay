@@ -170,6 +170,10 @@ const CSS = `
   .card.flush { padding: 0; }
   /* ---------- tabs ---------- */
   .tabs { display: flex; gap: 6px; border-bottom: 1px solid var(--border-soft); margin-bottom: 22px; }
+  /* La pastilla del agente viaja en la fila de pestañas, que lleva el borde
+     inferior pegado. Sin esto se estira hasta el alto de la fila y queda
+     apoyada sobre la línea. */
+  .tabs > .pill { align-self: center; margin-bottom: 8px; }
   .tab {
     border: 0; background: transparent; color: var(--muted);
     padding: 10px 16px 12px; font-weight: 500; font-size: 15px;

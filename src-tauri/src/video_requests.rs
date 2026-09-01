@@ -309,6 +309,7 @@ pub async fn worker_loop(state: AppState, mut rx: mpsc::Receiver<VrCmd>) {
             s.error = None;
         });
 
+        let arranco = Instant::now();
         match session(&state, &data_dir, &shared, &pairing, &mut playback, &mut rx).await {
             SessionEnd::Terminal(msg) => {
                 logln!("[VideoRequests] sesión cortada, no se reintenta: {msg}");
@@ -330,6 +331,14 @@ pub async fn worker_loop(state: AppState, mut rx: mpsc::Receiver<VrCmd>) {
                 continue;
             }
             SessionEnd::Retry(msg) => {
+                // Una sesión que se sostuvo un rato no es una caída en cadena:
+                // el backoff vuelve a cero. Sin esto solo crecía, así que tras
+                // unos cortes seguidos quedaba clavado en 30 s PARA SIEMPRE, y
+                // una microcaída en medio del stream costaba medio minuto de
+                // cola frenada por algo que había pasado tres horas antes.
+                if arranco.elapsed() >= Duration::from_secs(60) {
+                    backoff = Duration::from_secs(1);
+                }
                 logln!("[VideoRequests] reconecta en {}s: {msg}", backoff.as_secs());
                 update(&shared, |s| {
                     s.state = "connecting".into();
