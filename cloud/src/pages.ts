@@ -161,7 +161,13 @@ const CSS = `
     background: var(--surface);
     border: 1px solid var(--border-soft);
     border-radius: 16px;
+    /* En el diseño cada tarjeta traía su propio padding y la base no tenía
+       ninguno, así que toda tarjeta nueva salía con el texto contra el borde.
+       Las que ya tienen el suyo (.link-row, .stat) lo pisan más abajo. */
+    padding: 18px 20px;
   }
+  /* La tabla trae su espaciado en cada celda y va de borde a borde. */
+  .card.flush { padding: 0; }
   /* ---------- tabs ---------- */
   .tabs { display: flex; gap: 6px; border-bottom: 1px solid var(--border-soft); margin-bottom: 22px; }
   .tab {
@@ -1196,7 +1202,7 @@ export function adminPage(): string {
        </div>
 
        <div id="tab-viewers" class="tab-panel" hidden>
-         <div class="card">
+         <div class="card flush">
            <div class="table-wrap">
              <table class="data">
                <thead><tr>
@@ -1251,6 +1257,9 @@ const PILL = {
   fillChip(me);
 
   if (!me.login) {
+    // Sin sesión no hay nada que contar del canal, y dejar "Cargando…" para
+    // siempre parece que la página se colgó.
+    $('#chLine').textContent = 'Entrá con tu cuenta de Twitch para administrar la cola de tu canal.';
     $('#authCard').hidden = false;
     $('#loginBtn').onclick = () => login('/admin');
     return;
