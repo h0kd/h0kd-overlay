@@ -163,6 +163,9 @@ fn parse_overlay_event(txt: &str) -> Option<crate::video_requests::OverlayEvent>
         "requestEnded" => Some(OverlayEvent::RequestEnded {
             item_id: v["itemId"].as_str()?.to_string(),
             seconds: v["seconds"].as_f64().unwrap_or(0.0),
+            // Si el overlay no lo dice, se asume que falló: dar por reproducido
+            // algo que quizás nadie vio es la mentira más cara de las dos.
+            reason: v["reason"].as_str().unwrap_or("error").to_string(),
         }),
         _ => None,
     }

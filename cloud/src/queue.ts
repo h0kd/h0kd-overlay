@@ -165,6 +165,16 @@ export async function updateSettings(
     sets.push('max_resolution = ?');
     vals.push(patch['max_resolution'] === '1080' ? '1080' : '720');
   }
+  // Interruptor manual de los envíos. Normalmente los abre y cierra EventSub
+  // con stream.online/offline; esto existe para dos cosas: poder probar la cola
+  // sin estar en vivo, y tener un plan B si Twitch no avisa — sin esto, un
+  // webhook que no llegó deja la feature muerta y sin nada que tocar. El
+  // próximo evento del stream vuelve a mandar, que es lo correcto.
+  if (patch['submissions_open'] !== undefined) {
+    const v = patch['submissions_open'];
+    sets.push('submissions_open = ?');
+    vals.push(v === true || v === 'true' ? 1 : 0);
+  }
   if (patch['who_can_submit'] !== undefined) {
     const allowed = ['everyone', 'followers', 'subscribers', 'vips'];
     const v = String(patch['who_can_submit']);

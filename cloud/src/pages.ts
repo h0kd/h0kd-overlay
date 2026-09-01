@@ -303,6 +303,8 @@ export function adminPage(): string {
        </div>
        <div class="card">
          <strong>Política de envío</strong>
+         <label class="sw" style="margin-top:12px"><input type="checkbox" id="submissions_open"><span class="name">Envíos abiertos</span></label>
+         <p class="sub" style="margin:6px 0 0">Normalmente lo maneja Twitch solo: se abren al arrancar el stream y se cierran un rato después de terminarlo. Tocá esto para probar sin estar en vivo, o para abrirlos a mano si Twitch no avisó.</p>
          <div class="grid" style="margin-top:12px">
            <div><label>Cooldown por usuario (s)</label><input type="number" id="cooldown_seconds"></div>
            <div><label>Máximo en cola por usuario</label><input type="number" id="max_pending_per_user"></div>
@@ -357,11 +359,13 @@ export function adminPage(): string {
 
   const KEYS = ['cooldown_seconds','max_pending_per_user','max_duration_seconds','max_filesize_mb','max_resolution','playback_gap_seconds'];
   for (const k of KEYS) $('#' + k).value = data.settings[k];
+  $('#submissions_open').checked = !!data.settings.submissions_open;
 
   $('#saveBtn').onclick = async function () {
     this.disabled = true;
     const patch = {};
     for (const k of KEYS) patch[k] = $('#' + k).value;
+    patch.submissions_open = $('#submissions_open').checked;
     try {
       await api('/api/admin/settings', { method: 'POST', headers: { 'content-type': 'application/json' },
         body: JSON.stringify(patch) });

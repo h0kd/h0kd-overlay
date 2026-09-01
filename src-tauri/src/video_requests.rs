@@ -103,7 +103,12 @@ pub enum OverlayEvent {
     /// Hay (o no) algún video en pantalla, del origen que sea.
     Busy(bool),
     RequestStarted(String),
-    RequestEnded { item_id: String, seconds: f64 },
+    RequestEnded {
+        item_id: String,
+        seconds: f64,
+        /// "ended" si el video terminó solo; "error" si no se pudo reproducir.
+        reason: String,
+    },
 }
 
 // ── Emparejamiento persistido ────────────────────────────────────────────────
@@ -305,6 +310,7 @@ pub async fn worker_loop(state: AppState, mut rx: mpsc::Receiver<VrCmd>) {
 
         match session(&state, &data_dir, &shared, &pairing, &mut playback, &mut rx).await {
             SessionEnd::Terminal(msg) => {
+                println!("[VideoRequests] sesión cortada, no se reintenta: {msg}");
                 update(&shared, |s| {
                     s.state = "error".into();
                     s.error = Some(msg);
@@ -323,6 +329,7 @@ pub async fn worker_loop(state: AppState, mut rx: mpsc::Receiver<VrCmd>) {
                 continue;
             }
             SessionEnd::Retry(msg) => {
+                println!("[VideoRequests] reconecta en {}s: {msg}", backoff.as_secs());
                 update(&shared, |s| {
                     s.state = "connecting".into();
                     s.error = Some(msg);
@@ -534,7 +541,7 @@ async fn session(
     let mut limits = ChannelLimits::default();
     let mut status_tick = tokio::time::interval(STATUS_EVERY);
     let mut play_tick = tokio::time::interval(TICK);
-    let _ = send_ready(&mut tx_ws, data_dir).await;
+    let _ = send_ready(state, &mut tx_ws, data_dir).await;
 
     loop {
         tokio::select! {
@@ -573,7 +580,7 @@ async fn session(
             // ── Comandos de la UI y del overlay ──
             cmd = rx.recv() => match cmd {
                 Some(VrCmd::Overlay(ev)) => {
-                    apply_overlay_event(ev, playback, &mut tx_ws).await;
+                    apply_overlay_event(ev, &media, playback, &mut tx_ws).await;
                     update(shared, |s| s.now_playing = playback.now_playing.clone());
                 }
                 Some(VrCmd::Unpair) => {
@@ -598,6 +605,24 @@ async fn session(
 
             // ── Arbitraje: ¿se puede largar el siguiente? ──
             _ = play_tick.tick() => {
+                // Si el overlay se cae con algo NUESTRO en pantalla, eso no se
+                // arregla solo: el `requestEnded` lo manda el overlay, y si no
+                // está no lo manda nadie. `now_playing` quedaría puesto para
+                // siempre y la cola entera detrás, esperando un final que no va
+                // a llegar. Cerrarlo acá es la única salida.
+                if state.tx.receiver_count() == 0 {
+                    if let Some(item_id) = playback.now_playing.take() {
+                        println!("[VideoRequests] el overlay se fue con {item_id} en pantalla");
+                        let msg = envelope(
+                            "playback.ended",
+                            json!({ "item_id": item_id, "reason": "error", "played_seconds": 0 }),
+                        );
+                        let _ = tx_ws.send(Message::Text(msg.to_string())).await;
+                        playback.set_busy(false);
+                        update(shared, |s| s.now_playing = None);
+                    }
+                }
+
                 if let Some(item) = playback.next_to_play() {
                     playback.now_playing = Some(item.item_id.clone());
                     let msg = json!({
@@ -611,6 +636,9 @@ async fn session(
                         }
                     });
                     let clients = state.tx.send(msg.to_string()).unwrap_or(0);
+                    if clients > 0 {
+                        println!("[VideoRequests] → overlay {}", item.item_id);
+                    }
                     if clients == 0 {
                         // Sin overlay conectado no se puede reproducir: vuelve
                         // a la cola en vez de darse por reproducido.
@@ -630,6 +658,7 @@ async fn session(
                 let msg = envelope("status", json!({
                     "queue_len": playback.queue.len(),
                     "now_playing": playback.now_playing,
+                    "overlay_connected": state.tx.receiver_count() > 0,
                     "cookies": cookies_payload(data_dir),
                     "ytdlp_version": snapshot.ytdlp_version,
                     "disk_free_mb": 0,
@@ -697,7 +726,7 @@ fn cookies_payload(data_dir: &Path) -> Value {
     })
 }
 
-async fn send_ready(tx: &mut WsSink, data_dir: &Path) -> Result<(), ()> {
+async fn send_ready(state: &AppState, tx: &mut WsSink, data_dir: &Path) -> Result<(), ()> {
     let bins = core::binaries::resolve(data_dir);
     let version = core::ytdlp::version(&bins.ytdlp).await;
     let msg = envelope(
@@ -708,13 +737,21 @@ async fn send_ready(tx: &mut WsSink, data_dir: &Path) -> Result<(), ()> {
             "ffmpeg_version": Value::Null,
             "cookies": cookies_payload(data_dir),
             "encoder": "h264_nvenc",
-            "overlay_connected": true
+            // La cuenta real de Browser Sources conectados. Estaba fijo en
+            // `true`, o sea que decía que OBS estaba enganchado incluso con OBS
+            // cerrado, que es justo cuando importa saberlo.
+            "overlay_connected": state.tx.receiver_count() > 0
         }),
     );
     tx.send(Message::Text(msg.to_string())).await.map_err(|_| ())
 }
 
-async fn apply_overlay_event(ev: OverlayEvent, playback: &mut Playback, tx: &mut WsSink) {
+async fn apply_overlay_event(
+    ev: OverlayEvent,
+    media: &Path,
+    playback: &mut Playback,
+    tx: &mut WsSink,
+) {
     match ev {
         OverlayEvent::Busy(busy) => playback.set_busy(busy),
         OverlayEvent::RequestStarted(item_id) => {
@@ -722,16 +759,40 @@ async fn apply_overlay_event(ev: OverlayEvent, playback: &mut Playback, tx: &mut
             let msg = envelope("playback.started", json!({ "item_id": item_id }));
             let _ = tx.send(Message::Text(msg.to_string())).await;
         }
-        OverlayEvent::RequestEnded { item_id, seconds } => {
+        OverlayEvent::RequestEnded { item_id, seconds, reason } => {
             if playback.now_playing.as_deref() == Some(item_id.as_str()) {
                 playback.now_playing = None;
             }
+            // El motivo lo pone el overlay, no nosotros: el DO lo usa para dejar
+            // el ítem en `played` o en `cleared`, y hasta acá se mandaba "ended"
+            // siempre. Un video que ni arrancó figuraba como reproducido, y el
+            // mod que lo aprobó no tenía forma de enterarse.
+            let reason = if reason == "ended" { "ended" } else { "error" };
+            println!("[VideoRequests] fin {item_id}: {reason} ({seconds:.1}s)");
+            // El archivo ya cumplió: la nube lo deja en `played` y no se vuelve a
+            // encolar. Si no se borra acá, los mp4 se apilan toda la transmisión
+            // —unos 5 MB cada uno— y recién se limpian en la próxima reconexión,
+            // cuando el resync los declara huérfanos. Un stream largo sin
+            // reconectar es un stream juntando basura en disco.
+            core::pipeline::cleanup(media, &item_id);
             let msg = envelope(
                 "playback.ended",
-                json!({ "item_id": item_id, "reason": "ended", "played_seconds": seconds }),
+                json!({ "item_id": item_id, "reason": reason, "played_seconds": seconds }),
             );
             let _ = tx.send(Message::Text(msg.to_string())).await;
         }
+    }
+}
+
+/// Una línea por mensaje que llega del hub.
+///
+/// Sin esto lo que pasa entre la nube y el agente es invisible: el streamer ve
+/// "no se reprodujo" y no hay con qué distinguir un rechazo del mod, una
+/// descarga que falló y un socket que se cayó.
+fn log_hub(kind: &str, p: &Value) {
+    match p["item_id"].as_str() {
+        Some(id) if !id.is_empty() => println!("[VideoRequests] ← {kind} {id}"),
+        _ => println!("[VideoRequests] ← {kind}"),
     }
 }
 
@@ -751,6 +812,7 @@ async fn handle_hub_message(
     let data_dir = state.data_dir.as_path();
     let kind = v["type"].as_str().unwrap_or("");
     let p = &v["payload"];
+    log_hub(kind, p);
 
     match kind {
         "hello" => {
@@ -797,6 +859,9 @@ async fn handle_hub_message(
             let url = p["source_url"].as_str().unwrap_or("").to_string();
             let cfg = pipeline_config(data_dir, limits);
             let result = core::pipeline::fetch_metadata(bins, &url, &cfg).await;
+            if let Err(e) = &result {
+                println!("[VideoRequests] metadata falló {item_id}: [{:?}] {}", e.code, e.message);
+            }
             let payload = match result {
                 Ok((_, meta)) => json!({
                     "item_id": item_id,
@@ -823,6 +888,9 @@ async fn handle_hub_message(
             let url = p["source_url"].as_str().unwrap_or("").to_string();
             let cfg = pipeline_config(data_dir, limits);
             let result = core::pipeline::prepare(bins, &url, &item_id, media, &cfg).await;
+            if let Err(e) = &result {
+                println!("[VideoRequests] descarga falló {item_id}: [{:?}] {}", e.code, e.message);
+            }
             let payload = match result {
                 Ok(prepared) => {
                     playback.queue.push_back(ReadyItem {
@@ -832,6 +900,13 @@ async fn handle_hub_message(
                         submitter: String::new(),
                     });
                     update(shared, |s| s.queue_len = playback.queue.len());
+                    println!(
+                        "[VideoRequests] listo {item_id}: {:.1}s {}x{} ({})",
+                        prepared.duration_seconds,
+                        prepared.width,
+                        prepared.height,
+                        prepared.encoder_used.as_str()
+                    );
                     json!({
                         "item_id": item_id,
                         "ok": true,
