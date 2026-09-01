@@ -500,6 +500,80 @@ app.post('/api/admin/mods', async (c) => {
   return c.json({ ok: true });
 });
 
+/** Estados que cuentan como "todavía en juego" en cualquier consulta. */
+const EN_JUEGO = "('submitted','pending_review','approved','downloading','ready','playing')";
+/** Estados que cuentan como aprobado: la decisión fue sí, pasara lo que pasara después. */
+const APROBADOS = "('approved','downloading','ready','playing','played')";
+
+/**
+ * El resumen de arriba del panel.
+ *
+ * Todo sale de una sola consulta con sumas condicionales en vez de cinco
+ * queries: son cinco números de la misma tabla y D1 cobra por viaje.
+ */
+app.get('/api/admin/stats', async (c) => {
+  const auth = await requireBroadcaster(c);
+  if (auth.error) return auth.error;
+
+  const semana = Date.now() - 7 * 86400000;
+  const dosSemanas = Date.now() - 14 * 86400000;
+  const row = await c.env.DB.prepare(
+    `SELECT
+       SUM(CASE WHEN status IN ${EN_JUEGO} THEN 1 ELSE 0 END)                       AS en_cola,
+       MIN(CASE WHEN status IN ${EN_JUEGO} THEN created_at END)                      AS mas_viejo,
+       SUM(CASE WHEN status IN ${APROBADOS} AND decided_at >= ?1 THEN 1 ELSE 0 END)  AS aprobados,
+       SUM(CASE WHEN status IN ${APROBADOS} AND decided_at >= ?2
+                 AND decided_at < ?1 THEN 1 ELSE 0 END)                              AS aprobados_previos,
+       SUM(CASE WHEN status = 'rejected' AND decided_at >= ?1 THEN 1 ELSE 0 END)     AS rechazados,
+       SUM(CASE WHEN status = 'rejected' AND decided_at >= ?1
+                 AND decided_reason IS NOT NULL AND decided_reason <> ''
+                THEN 1 ELSE 0 END)                                                   AS con_motivo
+     FROM queue_items WHERE channel_id = ?3`,
+  )
+    .bind(semana, dosSemanas, auth.channel.channel_id)
+    .first<{
+      en_cola: number | null; mas_viejo: number | null; aprobados: number | null;
+      aprobados_previos: number | null; rechazados: number | null; con_motivo: number | null;
+    }>();
+
+  const aprobados = row?.aprobados ?? 0;
+  const rechazados = row?.rechazados ?? 0;
+  const revisados = aprobados + rechazados;
+  return c.json({
+    en_cola: row?.en_cola ?? 0,
+    mas_viejo: row?.mas_viejo ?? null,
+    aprobados,
+    aprobados_previos: row?.aprobados_previos ?? 0,
+    rechazados,
+    con_motivo: row?.con_motivo ?? 0,
+    revisados,
+    // Sin nada revisado no hay tasa. Un 0% ahí sería mentira, no un dato.
+    tasa: revisados ? Math.round((aprobados / revisados) * 100) : null,
+  });
+});
+
+/** Actividad por viewer. Ordenada por quién más manda, que es lo que se mira. */
+app.get('/api/admin/viewers', async (c) => {
+  const auth = await requireBroadcaster(c);
+  if (auth.error) return auth.error;
+
+  const res = await c.env.DB.prepare(
+    `SELECT submitter_login AS login,
+            COUNT(*)                                                          AS enviados,
+            SUM(CASE WHEN status IN ${APROBADOS} THEN 1 ELSE 0 END)           AS aprobados,
+            SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END)              AS rechazados,
+            SUM(CASE WHEN status IN ${EN_JUEGO} THEN 1 ELSE 0 END)            AS pendientes
+       FROM queue_items WHERE channel_id = ?
+      GROUP BY submitter_login
+      ORDER BY enviados DESC, login ASC
+      LIMIT 50`,
+  )
+    .bind(auth.channel.channel_id)
+    .all<{ login: string; enviados: number; aprobados: number; rechazados: number; pendientes: number }>();
+
+  return c.json({ viewers: res.results ?? [] });
+});
+
 app.post('/api/admin/settings', async (c) => {
   const auth = await requireBroadcaster(c);
   if (auth.error) return auth.error;

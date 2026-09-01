@@ -346,7 +346,9 @@ const CSS = `
   table.data .num { text-align: right; }
   td.num, th.num { font-variant-numeric: tabular-nums; }
   .cell-user { display: flex; align-items: center; gap: 10px; font-weight: 600; }
-  .cell-user span { display: block; font-weight: 400; color: var(--faint); font-size: 12.5px; }
+  /* Solo la linea secundaria de la celda, no el avatar: el avatar tambien es un
+     span y esta regla le pisaba color, tamano y display, dejandolo sin iniciales. */
+  .cell-user div span { display: block; font-weight: 400; color: var(--faint); font-size: 12.5px; }
   .table-wrap { overflow-x: auto; }
   .t-ok { color: var(--ok); font-weight: 600; }
   .t-bad { color: var(--bad); font-weight: 600; }
@@ -426,6 +428,45 @@ const CSS = `
     * { transition: none !important; }
   }
   .net.tw { background: var(--accent); }
+  /* ---------- formularios y estados vacios ----------
+     El diseño no cubría la pestaña de ajustes, el emparejamiento ni los
+     mensajes de "no hay nada". Va acá abajo, con los mismos tokens, para que
+     no se note la costura. */
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }
+  .grid label { display: block; color: var(--muted); font-size: 12.5px; margin-bottom: 6px; }
+  input[type=number], input[type=text], select {
+    width: 100%; background: var(--surface-2); border: 1px solid var(--border);
+    color: var(--text); border-radius: 9px; padding: 9px 12px; font: inherit;
+  }
+  input[type=number]:focus, input[type=text]:focus, select:focus {
+    outline: none; border-color: var(--accent);
+  }
+  label.sw { display: flex; align-items: center; gap: 10px; cursor: pointer; font-weight: 500; }
+  label.sw input { width: auto; accent-color: var(--accent); }
+  .mod-row {
+    display: flex; align-items: center; gap: 12px; padding: 10px 0;
+    border-top: 1px solid var(--border-soft);
+  }
+  .mod-row:first-child { border-top: none; }
+  .mod-row .name { flex: 1; }
+  .code-big {
+    font-family: "Spline Sans Mono", ui-monospace, monospace;
+    font-size: 30px; letter-spacing: .2em; font-weight: 500; text-align: center;
+    padding: 16px; margin-top: 14px; border-radius: 12px;
+    background: var(--surface-2); border: 1px solid var(--border);
+  }
+  .msg { margin-top: 12px; font-size: 13.5px; padding: 10px 13px; border-radius: 9px; display: none; }
+  .msg.err { display: block; background: var(--bad-soft); color: var(--bad); }
+  .msg.ok  { display: block; background: var(--ok-soft); color: var(--ok); }
+  .empty { color: var(--muted); font-size: 14px; padding: 26px 0; text-align: center; }
+  .waiting {
+    font-size: 13.5px; color: var(--warn); background: var(--warn-soft);
+    border-radius: 10px; padding: 11px 14px; margin-bottom: 14px; line-height: 1.5;
+  }
+  .stat-grid + .tabs { margin-top: 4px; }
+  /* Tarjetas apiladas dentro de una pestana: sin esto se pegan y parecen una sola. */
+  .tab-panel > .card + .card { margin-top: 14px; }
+
 `;
 
 /** Los <symbol> que usan todas las páginas. Markup fijo: nunca lleva datos. */
@@ -1085,60 +1126,355 @@ const PILL = {
 export function adminPage(): string {
   return page(
     'Administrar Video Requests',
-    `<h1>Video <span>Requests</span> — admin</h1>
-     <p class="sub" id="chLine">Cargando…</p>
-     <div class="card" id="authCard" style="display:none">
-       <p id="authMsg">Necesitás iniciar sesión con Twitch.</p>
-       <div class="row" style="margin-top:12px"><button id="loginBtn">Entrar con Twitch</button></div>
+    `<div class="view-head">
+       <h1>Administración del canal</h1>
+       <p id="chLine">Cargando…</p>
      </div>
-     <div id="panel" style="display:none">
-       <div class="card">
-         <strong>Emparejar la app</strong>
-         <p class="sub" style="margin:6px 0 0">Generá un código y pegalo en la app de escritorio, en Video Requests.</p>
-         <div class="row" style="margin-top:12px"><button id="pairBtn">Generar código</button></div>
-         <div class="code-big" id="pairCode" style="display:none"></div>
+
+     <div class="card" id="authCard" hidden>
+       <p id="authMsg">Necesitás iniciar sesión con Twitch.</p>
+       <div class="row" style="margin-top:14px"><button class="btn primary" id="loginBtn">Entrar con Twitch</button></div>
+     </div>
+
+     <div id="panel" hidden>
+       <div class="stat-grid" id="stats"></div>
+
+       <div class="tabs">
+         <button class="tab active" data-tab="queue">Cola <span class="count" id="queueCount">0</span></button>
+         <button class="tab" data-tab="history">Historial global</button>
+         <button class="tab" data-tab="mods">Moderadores <span class="count" id="modCount">0</span></button>
+         <button class="tab" data-tab="viewers">Viewers</button>
+         <button class="tab" data-tab="settings">Ajustes</button>
+         <span style="flex:1"></span>
+         <span class="pill" id="agentPill">agente: —</span>
        </div>
-       <div class="card">
-         <strong>Mods con acceso</strong>
-         <p class="sub" style="margin:6px 0 12px">Lista real de mods de tu canal, traída de Twitch. Marcá quiénes pueden entrar a <code>/mod</code>.</p>
-         <div id="mods"></div>
+
+       <div id="tab-queue" class="tab-panel">
+         <div id="waiting"></div>
+         <div class="link-list" id="queue"></div>
        </div>
-       <div class="card">
-         <strong>Política de envío</strong>
-         <label class="sw" style="margin-top:12px"><input type="checkbox" id="submissions_open"><span class="name">Envíos abiertos</span></label>
-         <p class="sub" style="margin:6px 0 0">Normalmente lo maneja Twitch solo: se abren al arrancar el stream y se cierran un rato después de terminarlo. Tocá esto para probar sin estar en vivo, o para abrirlos a mano si Twitch no avisó.</p>
-         <div class="grid" style="margin-top:12px">
-           <div><label>Cooldown por usuario (s)</label><input type="number" id="cooldown_seconds"></div>
-           <div><label>Máximo en cola por usuario</label><input type="number" id="max_pending_per_user"></div>
-           <div><label>Duración máxima (s)</label><input type="number" id="max_duration_seconds"></div>
-           <div><label>Tamaño máximo (MB)</label><input type="number" id="max_filesize_mb"></div>
-           <div><label>Resolución máxima</label><select id="max_resolution"><option value="720">720</option><option value="1080">1080</option></select></div>
-           <div><label>Gap entre videos (s)</label><input type="number" id="playback_gap_seconds"></div>
+
+       <div id="tab-history" class="tab-panel" hidden>
+         <div class="filter-bar" id="historyFilter" hidden>
+           <span id="historyWho"></span>
+           <button class="btn ghost sm" id="historyAll">Ver todo</button>
          </div>
-         <div class="row" style="margin-top:14px"><button id="saveBtn">Guardar</button></div>
-         <div class="msg" id="msg"></div>
+         <div class="link-list" id="history"></div>
+       </div>
+
+       <div id="tab-mods" class="tab-panel" hidden>
+         <div class="card">
+           <strong>Mods con acceso</strong>
+           <p class="hint" style="margin:6px 0 12px">Lista real de mods de tu canal, traída de Twitch. Marcá quiénes pueden entrar al panel de moderación.</p>
+           <div id="mods"></div>
+         </div>
+       </div>
+
+       <div id="tab-viewers" class="tab-panel" hidden>
+         <div class="card">
+           <div class="table-wrap">
+             <table class="data">
+               <thead><tr>
+                 <th>Viewer</th><th class="num">Enviados</th><th class="num">Aprobados</th>
+                 <th class="num">Rechazados</th><th class="num">En juego</th><th></th>
+               </tr></thead>
+               <tbody id="viewers"></tbody>
+             </table>
+           </div>
+         </div>
+       </div>
+
+       <div id="tab-settings" class="tab-panel" hidden>
+         <div class="card">
+           <strong>Emparejar la app</strong>
+           <p class="hint" style="margin:6px 0 12px">Generá un código y pegalo en la app de escritorio, en Video Requests.</p>
+           <div class="row"><button class="btn primary" id="pairBtn">Generar código</button></div>
+           <div class="code-big" id="pairCode" hidden></div>
+         </div>
+         <div class="card">
+           <strong>Política de envío</strong>
+           <label class="sw" style="margin-top:12px"><input type="checkbox" id="submissions_open"><span class="name">Envíos abiertos</span></label>
+           <p class="hint" style="margin:6px 0 0">Normalmente lo maneja Twitch solo: se abren al arrancar el stream y se cierran un rato después de terminarlo. Tocá esto para probar sin estar en vivo, o para abrirlos a mano si Twitch no avisó.</p>
+           <div class="grid" style="margin-top:14px">
+             <div><label>Cooldown por usuario (s)</label><input type="number" id="cooldown_seconds"></div>
+             <div><label>Máximo en cola por usuario</label><input type="number" id="max_pending_per_user"></div>
+             <div><label>Duración máxima (s)</label><input type="number" id="max_duration_seconds"></div>
+             <div><label>Tamaño máximo (MB)</label><input type="number" id="max_filesize_mb"></div>
+             <div><label>Resolución máxima</label><select id="max_resolution"><option value="720">720</option><option value="1080">1080</option></select></div>
+             <div><label>Gap entre videos (s)</label><input type="number" id="playback_gap_seconds"></div>
+           </div>
+           <div class="row" style="margin-top:14px"><button class="btn primary" id="saveBtn">Guardar</button></div>
+           <div class="msg" id="msg"></div>
+         </div>
        </div>
      </div>`,
     `
+const LABEL = {
+  pending_review: 'esperando revisión', approved: 'aprobado', downloading: 'descargando',
+  ready: 'listo', playing: 'reproduciendo', failed: 'falló', played: 'se reprodujo',
+  rejected: 'rechazado', cleared: 'se limpió al terminar el stream',
+};
+const PILL = {
+  pending_review: 'warn', approved: 'ok', downloading: 'ok', ready: 'ok', playing: 'ok',
+  played: 'ok', rejected: 'bad', failed: 'bad', cleared: '',
+};
+
 (async function () {
   let me;
-  try { me = await api('/api/me'); } catch (e) { $('#chLine').textContent = e.message; return; }
+  try { me = await api('/api/me?ch=' + encodeURIComponent(ch)); }
+  catch (e) { $('#chLine').textContent = e.message; return; }
+  fillChip(me);
 
-  if (!me.login) { $('#authCard').style.display = ''; $('#loginBtn').onclick = () => login('/admin'); return; }
-  $('#chLine').textContent = 'Conectado como ' + me.login;
+  if (!me.login) {
+    $('#authCard').hidden = false;
+    $('#loginBtn').onclick = () => login('/admin');
+    return;
+  }
 
   let data;
   try { data = await api('/api/admin/overview'); }
   catch (e) {
-    $('#authCard').style.display = '';
+    $('#authCard').hidden = false;
     $('#authMsg').textContent = e.message;
     $('#loginBtn').textContent = 'Entrar con otra cuenta';
     $('#loginBtn').onclick = () => login('/admin');
     return;
   }
-  $('#panel').style.display = '';
+  $('#panel').hidden = false;
+  $('#chLine').textContent = 'Todo lo que pasa por la cola de ' + (me.channel_login || me.login) + ': estado general, historial, moderadores y actividad por viewer.';
 
-  const box = $('#mods'); box.textContent = '';
+  // ── Pestañas ──
+  const tabs = document.querySelectorAll('.tab');
+  const paneles = ['queue', 'history', 'mods', 'viewers', 'settings'];
+  function abrir(cual) {
+    tabs.forEach((o) => o.classList.toggle('active', o.dataset.tab === cual));
+    for (const p of paneles) $('#tab-' + p).hidden = p !== cual;
+    if (cual === 'history') cargarHistorial();
+    if (cual === 'viewers') cargarViewers();
+  }
+  tabs.forEach((t) => t.onclick = () => abrir(t.dataset.tab));
+
+  // ── Resumen ──
+  function tarjetaStat(clase, etiqueta, valor, detalle) {
+    const c = el('div', 'card stat ' + clase);
+    c.appendChild(el('div', 'label', etiqueta));
+    c.appendChild(el('div', 'value mono', valor));
+    c.appendChild(el('div', 'delta', detalle));
+    return c;
+  }
+  async function cargarStats() {
+    let st;
+    try { st = await api('/api/admin/stats'); } catch (e) { return; }
+    const box = $('#stats');
+    box.textContent = '';
+    box.appendChild(tarjetaStat('warn', 'En cola ahora', String(st.en_cola),
+      st.mas_viejo ? 'el más antiguo, ' + hace(st.mas_viejo) : 'la cola está vacía'));
+    const delta = st.aprobados - st.aprobados_previos;
+    box.appendChild(tarjetaStat('ok', 'Aprobados · 7 días', String(st.aprobados),
+      (delta >= 0 ? '+' : '') + delta + ' vs. la semana anterior'));
+    box.appendChild(tarjetaStat('bad', 'Rechazados · 7 días', String(st.rechazados),
+      st.rechazados ? st.con_motivo + ' con motivo, ' + (st.rechazados - st.con_motivo) + ' sin motivo' : 'ninguno'));
+    box.appendChild(tarjetaStat('', 'Tasa de aprobación',
+      st.tasa === null ? '—' : st.tasa + '%',
+      st.revisados ? st.revisados + ' links revisados' : 'todavía sin revisar nada'));
+  }
+
+  // ── Cola (el broadcaster también decide) ──
+  function enlaceOriginal(it) {
+    const a = el('a', null, 'ver el original');
+    a.href = it.source_url; a.target = '_blank'; a.rel = 'noopener noreferrer';
+    return a;
+  }
+
+  function tarjeta(it) {
+    const row = el('article', 'card link-row');
+    row.appendChild(miniatura(it, it.platform !== 'instagram' && it.platform !== 'tiktok'));
+    const body = el('div', 'link-body');
+    const byline = el('div', 'byline');
+    byline.appendChild(avatar(it.submitter_login));
+    byline.appendChild(el('b', null, it.submitter_login));
+    byline.appendChild(el('span', null, ' · ' + hace(it.created_at)));
+    body.appendChild(byline);
+    body.appendChild(el('div', 'link-title', it.title || urlCorta(it.source_url)));
+    const meta = el('div', 'link-meta');
+    meta.appendChild(el('span', 'mono', urlCorta(it.source_url)));
+    meta.appendChild(el('span', null, dur(it.duration_seconds)));
+    if (it.status !== 'pending_review') meta.appendChild(el('span', null, LABEL[it.status] || it.status));
+    meta.appendChild(enlaceOriginal(it));
+    body.appendChild(meta);
+    if (it.error) {
+      const m = el('div', 'reason');
+      m.appendChild(el('b', null, 'Falló: '));
+      m.appendChild(el('span', null, it.error));
+      body.appendChild(m);
+    }
+    row.appendChild(body);
+
+    const side = el('div', 'link-side');
+    if (it.status === 'pending_review') {
+      const acciones = el('div', 'mod-actions');
+      const ok = el('button', 'btn approve');
+      ok.appendChild(icon('ic-check', 15));
+      ok.appendChild(el('span', null, ' Aprobar'));
+      const no = el('button', 'btn reject');
+      no.appendChild(icon('ic-x', 15));
+      no.appendChild(el('span', null, ' Rechazar'));
+      acciones.appendChild(ok); acciones.appendChild(no);
+      side.appendChild(acciones);
+
+      const panel = el('div', 'reject-panel');
+      panel.hidden = true;
+      panel.appendChild(el('label', null, 'Motivo del rechazo (opcional — el viewer lo va a ver)'));
+      const texto = document.createElement('textarea');
+      texto.placeholder = 'p. ej. contenido repetido, muy largo, fuera de tema…';
+      texto.maxLength = 300;
+      panel.appendChild(texto);
+      const fila = el('div', 'row');
+      const cancelar = el('button', 'btn ghost sm', 'Cancelar');
+      const confirmar = el('button', 'btn reject sm', 'Rechazar');
+      fila.appendChild(cancelar); fila.appendChild(confirmar);
+      panel.appendChild(fila);
+      body.appendChild(panel);
+
+      ok.onclick = () => decidir(it.id, true, null, [ok, no]);
+      no.onclick = () => { panel.hidden = false; acciones.hidden = true; texto.focus(); };
+      cancelar.onclick = () => { panel.hidden = true; acciones.hidden = false; };
+      confirmar.onclick = () => decidir(it.id, false, texto.value, [confirmar, cancelar]);
+    } else {
+      side.appendChild(el('span', 'pill ' + (PILL[it.status] || ''), LABEL[it.status] || it.status));
+    }
+    row.appendChild(side);
+    return row;
+  }
+
+  async function decidir(id, aprobado, motivo, btns) {
+    btns.forEach((b) => b.disabled = true);
+    try {
+      await api('/api/decide', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ ch: ch || me.channel_login, item_id: id, approved: aprobado, reason: motivo || '' }),
+      });
+      toast(aprobado ? 'Aprobado. Va a la lista del stream.' : 'Rechazado. El viewer ya lo ve.');
+      cargarStats();
+    } catch (e) {
+      toast(e.message);
+      btns.forEach((b) => b.disabled = false);
+    }
+  }
+
+  function render(items, esperando) {
+    const box = $('#queue');
+    box.textContent = '';
+    const aviso = $('#waiting');
+    aviso.textContent = '';
+    if (esperando > 0) {
+      aviso.appendChild(el('div', 'waiting',
+        esperando + (esperando === 1 ? ' pedido esperando' : ' pedidos esperando')
+        + ' a que la app lea el video. No se pueden revisar hasta entonces.'));
+    }
+    $('#queueCount').textContent = items.filter((i) => i.status === 'pending_review').length;
+    if (!items.length) { box.appendChild(el('div', 'empty', 'No hay nada en la cola.')); return; }
+    for (const it of items) box.appendChild(tarjeta(it));
+  }
+
+  // ── Historial global ──
+  let historial = [];
+  let filtro = null;
+  async function cargarHistorial() {
+    const box = $('#history');
+    if (!historial.length) { box.textContent = ''; box.appendChild(el('div', 'empty', 'Cargando…')); }
+    try {
+      const data = await api('/api/history?ch=' + encodeURIComponent(ch || me.channel_login));
+      historial = data.items;
+    } catch (e) {
+      box.textContent = '';
+      box.appendChild(el('div', 'empty', e.message));
+      return;
+    }
+    pintarHistorial();
+  }
+  function pintarHistorial() {
+    const box = $('#history');
+    box.textContent = '';
+    $('#historyFilter').hidden = !filtro;
+    if (filtro) $('#historyWho').textContent = 'Mostrando solo lo de ' + filtro;
+    const visibles = filtro ? historial.filter((it) => it.submitter_login === filtro) : historial;
+    if (!visibles.length) {
+      box.appendChild(el('div', 'empty', filtro ? 'Ese viewer no tiene nada decidido todavía.' : 'Todavía no se decidió nada.'));
+      return;
+    }
+    for (const it of visibles) {
+      const row = el('article', 'card link-row');
+      row.appendChild(miniatura(it, it.platform !== 'instagram' && it.platform !== 'tiktok'));
+      const body = el('div', 'link-body');
+      const byline = el('div', 'byline');
+      byline.appendChild(avatar(it.submitter_login));
+      byline.appendChild(el('b', null, it.submitter_login));
+      byline.appendChild(el('span', null, ' · ' + hace(it.created_at)));
+      body.appendChild(byline);
+      body.appendChild(el('div', 'link-title', it.title || urlCorta(it.source_url)));
+      const meta = el('div', 'link-meta');
+      meta.appendChild(el('span', 'mono', urlCorta(it.source_url)));
+      meta.appendChild(el('span', null, (LABEL[it.status] || it.status)
+        + (it.decided_by ? ' por ' + it.decided_by : '') + ' · ' + hace(it.decided_at || it.created_at)));
+      meta.appendChild(enlaceOriginal(it));
+      body.appendChild(meta);
+      if (it.decided_reason) {
+        const m = el('div', 'reason');
+        m.appendChild(el('b', null, 'Motivo: '));
+        m.appendChild(el('span', null, it.decided_reason));
+        body.appendChild(m);
+      }
+      row.appendChild(body);
+      const side = el('div', 'link-side');
+      side.appendChild(el('span', 'pill ' + (PILL[it.status] || ''), LABEL[it.status] || it.status));
+      row.appendChild(side);
+      box.appendChild(row);
+    }
+  }
+  $('#historyAll').onclick = () => { filtro = null; pintarHistorial(); };
+
+  // ── Viewers ──
+  let viewersCargados = false;
+  async function cargarViewers() {
+    const cuerpo = $('#viewers');
+    let data;
+    try { data = await api('/api/admin/viewers'); } catch (e) { return; }
+    viewersCargados = true;
+    cuerpo.textContent = '';
+    if (!data.viewers.length) {
+      const tr = el('tr');
+      const td = el('td', 'empty', 'Todavía no mandó nadie.');
+      td.colSpan = 6;
+      tr.appendChild(td);
+      cuerpo.appendChild(tr);
+      return;
+    }
+    for (const v of data.viewers) {
+      const tr = el('tr');
+      const quien = el('td');
+      const celda = el('div', 'cell-user');
+      celda.appendChild(avatar(v.login));
+      celda.appendChild(el('div', null, v.login));
+      quien.appendChild(celda);
+      tr.appendChild(quien);
+      tr.appendChild(el('td', 'num mono', String(v.enviados)));
+      tr.appendChild(el('td', 'num mono t-ok', String(v.aprobados)));
+      tr.appendChild(el('td', 'num mono t-bad', String(v.rechazados)));
+      tr.appendChild(el('td', 'num mono t-warn', String(v.pendientes)));
+      const accion = el('td', 'num');
+      const btn = el('button', 'btn sm', 'Ver historial');
+      btn.onclick = async () => { filtro = v.login; abrir('history'); await cargarHistorial(); };
+      accion.appendChild(btn);
+      tr.appendChild(accion);
+      cuerpo.appendChild(tr);
+    }
+  }
+
+  // ── Moderadores ──
+  const box = $('#mods');
+  box.textContent = '';
+  $('#modCount').textContent = data.mods.filter((m) => m.authorized).length;
   if (!data.mods.length) box.appendChild(el('div', 'empty', 'Tu canal no tiene mods en Twitch.'));
   for (const m of data.mods) {
     const row = el('div', 'mod-row');
@@ -1149,16 +1485,19 @@ export function adminPage(): string {
       try {
         await api('/api/admin/mods', { method: 'POST', headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ user_id: m.user_id, login: m.user_login, authorized: cb.checked }) });
-      } catch (e) { alert(e.message); cb.checked = !cb.checked; }
+        $('#modCount').textContent = document.querySelectorAll('#mods input:checked').length;
+      } catch (e) { toast(e.message); cb.checked = !cb.checked; }
       cb.disabled = false;
     };
     lab.appendChild(cb);
+    lab.appendChild(avatar(m.user_name || m.user_login));
     lab.appendChild(el('span', 'name', m.user_name || m.user_login));
     row.appendChild(lab);
     if (!m.still_mod) row.appendChild(el('span', 'pill warn', 'ya no es mod en Twitch'));
     box.appendChild(row);
   }
 
+  // ── Ajustes ──
   const KEYS = ['cooldown_seconds','max_pending_per_user','max_duration_seconds','max_filesize_mb','max_resolution','playback_gap_seconds'];
   for (const k of KEYS) $('#' + k).value = data.settings[k];
   $('#submissions_open').checked = !!data.settings.submissions_open;
@@ -1180,12 +1519,38 @@ export function adminPage(): string {
     this.disabled = true;
     try {
       const r = await api('/api/admin/pair', { method: 'POST' });
-      const box = $('#pairCode');
-      box.style.display = '';
-      box.textContent = r.code;
-    } catch (e) { alert(e.message); }
+      const caja = $('#pairCode');
+      caja.hidden = false;
+      caja.textContent = r.code;
+      toast('El código vale ' + Math.round(r.expires_in / 60) + ' minutos y se usa una sola vez.');
+    } catch (e) { toast(e.message); }
     this.disabled = false;
   };
+
+  function agentPill(a) {
+    const pill = $('#agentPill');
+    if (!a || !a.online) { pill.className = 'pill bad'; pill.textContent = 'agente: desconectado'; return; }
+    if (a.cookies_state === 'expired') { pill.className = 'pill warn'; pill.textContent = 'agente: cookies vencidas'; return; }
+    pill.className = 'pill ok';
+    pill.textContent = 'agente: conectado' + (a.now_playing ? ' · reproduciendo' : '');
+  }
+
+  // La cola del admin es la misma que la de los mods: mismo socket, misma vista.
+  let ws = null, backoff = 1000;
+  function connect() {
+    ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host
+      + '/mod/ws?ch=' + encodeURIComponent(ch || me.channel_login));
+    ws.onopen = () => { backoff = 1000; };
+    ws.onmessage = (ev) => {
+      let m; try { m = JSON.parse(ev.data); } catch (_) { return; }
+      if (m.type === 'queue') { render(m.items, m.waiting || 0); cargarStats(); }
+      else if (m.type === 'agent') agentPill(m);
+    };
+    ws.onclose = () => { setTimeout(connect, backoff); backoff = Math.min(30000, backoff * 2); };
+    ws.onerror = () => {};
+  }
+  connect();
+  cargarStats();
 })();`,
   );
 }
