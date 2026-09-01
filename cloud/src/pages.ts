@@ -194,6 +194,12 @@ const CSS = `
     overflow: hidden;
   }
   .thumb .glow { position: absolute; inset: 0; }
+  /* El diseno solo contemplaba el degradado; cuando hay miniatura de verdad
+     tiene que llenar la caja igual, recortando en vez de deformar. La imagen
+     viene de un CDN ajeno y puede tener cualquier proporcion. */
+  .thumb img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  /* El horizontal es para clips 16:9; el vertical, para Reels y TikToks. */
+  .thumb.wide { width: 168px; aspect-ratio: 16 / 9; }
   .t-1 { background: linear-gradient(160deg, #3b2a68 10%, #7f5adf 55%, #2a1b4d); }
   .t-2 { background: linear-gradient(200deg, #145049 5%, #2fae90 60%, #0d3a35); }
   .t-3 { background: linear-gradient(150deg, #6e2144 10%, #e0567f 65%, #471230); }
@@ -803,10 +809,14 @@ const VISTA = {
       }
       body.appendChild(veredicto);
 
-      if (it.error) {
+      // Dos cosas distintas que se ven igual: por qué lo rechazó un humano, y
+      // por qué falló la máquina. El motivo del mod es el que más importa: es
+      // la diferencia entre entender y volver a mandar lo mismo tres veces.
+      const explicacion = it.decided_reason || it.error;
+      if (explicacion) {
         const motivo = el('div', 'reason');
-        motivo.appendChild(el('b', null, 'Motivo: '));
-        motivo.appendChild(el('span', null, it.error));
+        motivo.appendChild(el('b', null, it.decided_reason ? 'Motivo: ' : 'Falló: '));
+        motivo.appendChild(el('span', null, explicacion));
         body.appendChild(motivo);
       }
       row.appendChild(body);
@@ -1241,7 +1251,10 @@ const PILL = {
     return;
   }
   $('#panel').hidden = false;
-  $('#chLine').textContent = 'Todo lo que pasa por la cola de ' + (me.channel_login || me.login) + ': estado general, historial, moderadores y actividad por viewer.';
+  // /admin no lleva ?ch= en la URL y /api/me sin ese parametro devuelve solo el
+  // usuario. Acá el canal es, por definición, el del broadcaster que entró.
+  const canal = ch || me.login;
+  $('#chLine').textContent = 'Todo lo que pasa por la cola de ' + canal + ': estado general, historial, moderadores y actividad por viewer.';
 
   // ── Pestañas ──
   const tabs = document.querySelectorAll('.tab');
@@ -1352,7 +1365,7 @@ const PILL = {
     try {
       await api('/api/decide', {
         method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ ch: ch || me.channel_login, item_id: id, approved: aprobado, reason: motivo || '' }),
+        body: JSON.stringify({ ch: canal, item_id: id, approved: aprobado, reason: motivo || '' }),
       });
       toast(aprobado ? 'Aprobado. Va a la lista del stream.' : 'Rechazado. El viewer ya lo ve.');
       cargarStats();
@@ -1384,7 +1397,7 @@ const PILL = {
     const box = $('#history');
     if (!historial.length) { box.textContent = ''; box.appendChild(el('div', 'empty', 'Cargando…')); }
     try {
-      const data = await api('/api/history?ch=' + encodeURIComponent(ch || me.channel_login));
+      const data = await api('/api/history?ch=' + encodeURIComponent(canal));
       historial = data.items;
     } catch (e) {
       box.textContent = '';
@@ -1539,7 +1552,7 @@ const PILL = {
   let ws = null, backoff = 1000;
   function connect() {
     ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host
-      + '/mod/ws?ch=' + encodeURIComponent(ch || me.channel_login));
+      + '/mod/ws?ch=' + encodeURIComponent(canal));
     ws.onopen = () => { backoff = 1000; };
     ws.onmessage = (ev) => {
       let m; try { m = JSON.parse(ev.data); } catch (_) { return; }
