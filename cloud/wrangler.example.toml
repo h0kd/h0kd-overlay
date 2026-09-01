@@ -16,6 +16,15 @@ compatibility_date = "2026-01-01"
 workers_dev = true
 preview_urls = false
 
+# Dominio propio (opcional). `custom_domain = true` hace que Cloudflare cree el
+# registro DNS y el certificado solo; la zona tiene que estar en la misma
+# cuenta. Al activarlo, PUBLIC_ORIGIN pasa a ser ese host y hay que registrar
+# `https://<host>/auth/callback` como OAuth Redirect URL en la app de Twitch
+# ANTES de desplegar, o el login se rompe.
+# routes = [
+#   { pattern = "videos.tu-dominio.dev", custom_domain = true },
+# ]
+
 # ── D1: fuente de verdad de cola, mods y settings ────────────────────────────
 [[d1_databases]]
 binding = "DB"
