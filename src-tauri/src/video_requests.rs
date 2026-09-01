@@ -56,6 +56,10 @@ pub struct VrStatus {
     pub binaries_ok: bool,
     #[serde(rename = "ytdlpVersion")]
     pub ytdlp_version: Option<String>,
+    /// Verdadero mientras se bajan yt-dlp o ffmpeg. La UI lo mira para dejar el
+    /// botón en "Bajando…": la descarga ya no bloquea a quien la pidió, así que
+    /// el comando vuelve enseguida y sin esto parecería que ya terminó.
+    pub installing: bool,
     pub error: Option<String>,
 }
 
@@ -69,6 +73,7 @@ impl Default for VrStatus {
             cookies_state: "missing".into(),
             binaries_ok: false,
             ytdlp_version: None,
+            installing: false,
             error: None,
         }
     }
@@ -326,20 +331,8 @@ async fn handle_offline_cmd(
                 s.error = None;
             });
         }
-        VrCmd::InstallBinaries => {
-            match core::binaries::install_missing(data_dir).await {
-                Ok(_) => update(shared, |s| s.error = None),
-                Err(e) => update(shared, |s| s.error = Some(e.message)),
-            }
-            refresh_environment(data_dir, shared).await;
-        }
-        VrCmd::UpdateYtdlp => {
-            let bins = core::binaries::resolve(data_dir);
-            if let Err(e) = core::ytdlp::self_update(&bins.ytdlp).await {
-                update(shared, |s| s.error = Some(e.message));
-            }
-            refresh_environment(data_dir, shared).await;
-        }
+        VrCmd::InstallBinaries => spawn_binaries_job(data_dir, shared, BinariesJob::Install),
+        VrCmd::UpdateYtdlp => spawn_binaries_job(data_dir, shared, BinariesJob::UpdateYtdlp),
         VrCmd::Overlay(_) => {}
     }
 }
@@ -389,6 +382,53 @@ async fn refresh_environment(data_dir: &Path, shared: &SharedVrStatus) {
             core::CookieState::Missing => "missing",
         }
         .to_string();
+    });
+}
+
+/// Qué hay que bajar.
+enum BinariesJob {
+    /// yt-dlp y/o ffmpeg, lo que falte.
+    Install,
+    /// `yt-dlp -U`.
+    UpdateYtdlp,
+}
+
+/// Lanza la descarga en una tarea aparte y vuelve en el acto.
+///
+/// Esto NO se puede `await` desde el bucle de la sesión: ffmpeg son ~110 MB, y
+/// mientras baja el agente no leería los mensajes del hub, no mandaría el
+/// latido de estado ni largaría el siguiente video. El DO lo daría por muerto
+/// y la cola se frenaría en pleno stream por haber apretado un botón.
+///
+/// El flag `installing` hace de candado: dos clicks no bajan dos veces.
+fn spawn_binaries_job(data_dir: &Path, shared: &SharedVrStatus, job: BinariesJob) {
+    let mut go = false;
+    if let Ok(mut s) = shared.lock() {
+        if !s.installing {
+            s.installing = true;
+            s.error = None;
+            go = true;
+        }
+    }
+    if !go {
+        return;
+    }
+
+    let data_dir = data_dir.to_path_buf();
+    let shared = Arc::clone(shared);
+    tokio::spawn(async move {
+        let outcome = match job {
+            BinariesJob::Install => core::binaries::install_missing(&data_dir).await.map(|_| ()),
+            BinariesJob::UpdateYtdlp => {
+                let bins = core::binaries::resolve(&data_dir);
+                core::ytdlp::self_update(&bins.ytdlp).await.map(|_| ())
+            }
+        };
+        if let Err(e) = outcome {
+            update(&shared, |s| s.error = Some(e.message));
+        }
+        refresh_environment(&data_dir, &shared).await;
+        update(&shared, |s| s.installing = false);
     });
 }
 
@@ -449,7 +489,6 @@ async fn session(
     });
     println!("[VideoRequests] Conectado al canal '{}'.", pairing.channel_login);
 
-    let bins = core::binaries::resolve(data_dir);
     let media = media_dir(data_dir);
     let mut status_tick = tokio::time::interval(STATUS_EVERY);
     let mut play_tick = tokio::time::interval(TICK);
@@ -461,6 +500,11 @@ async fn session(
             incoming = rx_ws.next() => match incoming {
                 Some(Ok(Message::Text(txt))) => {
                     let v: Value = serde_json::from_str(&txt).unwrap_or(Value::Null);
+                    // Los binarios se resuelven en cada mensaje y no una vez por
+                    // sesión: si alguien aprieta "Instalar lo que falte" con la
+                    // conexión abierta, lo recién bajado tiene que verse sin
+                    // reiniciar la app. Son tres `is_file()`, no cuesta nada.
+                    let bins = core::binaries::resolve(data_dir);
                     if let Some(end) = handle_hub_message(
                         state, &v, &bins, &media, playback, shared, &mut tx_ws,
                     ).await {
@@ -502,16 +546,10 @@ async fn session(
                     }
                 }
                 Some(VrCmd::InstallBinaries) => {
-                    if let Err(e) = core::binaries::install_missing(data_dir).await {
-                        update(shared, |s| s.error = Some(e.message));
-                    }
-                    refresh_environment(data_dir, shared).await;
+                    spawn_binaries_job(data_dir, shared, BinariesJob::Install);
                 }
                 Some(VrCmd::UpdateYtdlp) => {
-                    if let Err(e) = core::ytdlp::self_update(&bins.ytdlp).await {
-                        update(shared, |s| s.error = Some(e.message));
-                    }
-                    refresh_environment(data_dir, shared).await;
+                    spawn_binaries_job(data_dir, shared, BinariesJob::UpdateYtdlp);
                 }
                 None => return SessionEnd::Terminal("La app se está cerrando.".into()),
             },

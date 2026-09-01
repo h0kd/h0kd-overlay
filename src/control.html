@@ -1056,10 +1056,10 @@
       invoke('vr_unpair').catch(function(e) { vrShowError(e); });
     });
     document.getElementById('vrInstallBtn').addEventListener('click', function() {
-      vrRun(this, 'vr_install_binaries', 'Instalando…');
+      vrStartJob(this, 'vr_install_binaries');
     });
     document.getElementById('vrUpdateBtn').addEventListener('click', function() {
-      vrRun(this, 'vr_update_ytdlp', 'Actualizando…');
+      vrStartJob(this, 'vr_update_ytdlp');
     });
     document.getElementById('vrCookiesBtn').addEventListener('click', function() {
       invoke('vr_open_cookies_dir').catch(function(e) { vrShowError(e); });
@@ -1555,12 +1555,20 @@
     btn.disabled = false; btn.textContent = 'Emparejar';
   }
 
-  async function vrRun(btn, command, busyText) {
-    var orig = btn.textContent;
-    btn.disabled = true; btn.textContent = busyText;
+  var VR_JOB_LABEL = {
+    vrInstallBtn: 'Instalar lo que falte',
+    vrUpdateBtn:  'Actualizar yt-dlp'
+  };
+
+  // Bajar ffmpeg son ~110 MB y ya no bloquea al agente, así que el comando
+  // vuelve en el acto: no se puede usar su promesa como "terminó". Quién manda
+  // es `installing` de vr_status; acá solo se marca el botón para que no quede
+  // clickeable los ~2 s hasta el próximo poll.
+  function vrStartJob(btn, command) {
+    btn.disabled = true;
+    btn.textContent = 'Bajando…';
     vrShowError('');
-    try { await invoke(command); } catch (e) { vrShowError(e); }
-    btn.disabled = false; btn.textContent = orig;
+    invoke(command).catch(function(e) { vrShowError(e); });
   }
 
   var VR_CONN = {
@@ -1573,6 +1581,17 @@
   async function pollVr() {
     var st;
     try { st = await invoke('vr_status'); } catch (_) { return; }
+
+    // Los botones de descarga se sincronizan ANTES del corte por firma
+    // repetida. Si no, una descarga que empieza y termina entre dos polls
+    // (`yt-dlp -U` cuando ya está al día) no cambiaría nada más del estado, la
+    // firma daría igual, y el botón quedaría en "Bajando…" y deshabilitado
+    // para siempre.
+    Object.keys(VR_JOB_LABEL).forEach(function(id) {
+      var b = document.getElementById(id);
+      b.disabled = !!st.installing;
+      b.textContent = st.installing ? 'Bajando…' : VR_JOB_LABEL[id];
+    });
 
     // Firma para no repintar en cada poll: el usuario podría estar tipeando el
     // código y no queremos pisarle el input ni el foco.

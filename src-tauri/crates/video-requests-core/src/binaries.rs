@@ -200,11 +200,27 @@ async fn install_ffmpeg(dir: &Path) -> Result<()> {
 /// Descarga a un archivo y devuelve su SHA-256 en hex.
 ///
 /// Se escribe a disco a medida que llega en vez de juntar todo en memoria: el
-/// zip de ffmpeg pesa ~80 MB y esto corre en la máquina de alguien que está
+/// zip de ffmpeg pesa ~110 MB y esto corre en la máquina de alguien que está
 /// transmitiendo.
 async fn download_to(url: &str, dest: &Path) -> Result<String> {
+    let out = stream_to_file(url, dest).await;
+    if out.is_err() {
+        // Un archivo a medias son decenas de MB de basura en la carpeta del
+        // usuario. El próximo intento lo pisa, pero si abandona queda ahí.
+        let _ = std::fs::remove_file(dest);
+    }
+    out
+}
+
+async fn stream_to_file(url: &str, dest: &Path) -> Result<String> {
+    // Los timeouts son por INACTIVIDAD, nunca por duración total. Un tope total
+    // mata descargas sanas: ffmpeg pesa ~110 MB, y con los 600 s que había acá
+    // antes, cualquiera que bajara a menos de ~190 KB/s no podía instalarlo
+    // nunca, por más que la descarga estuviera avanzando bien. Lo que hay que
+    // cortar es la conexión que se quedó muda, no la que va lenta.
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(600))
+        .connect_timeout(std::time::Duration::from_secs(30))
+        .read_timeout(std::time::Duration::from_secs(60))
         .build()
         .map_err(|e| ErrorDetail::new(ErrorCode::DownloadFailed, format!("Cliente HTTP: {e}")))?;
 
