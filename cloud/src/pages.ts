@@ -511,6 +511,9 @@ const ICONS = `<svg width="0" height="0" style="position:absolute" aria-hidden="
     <symbol id="ic-yt" viewBox="0 0 24 24">
       <path fill="currentColor" d="M23.5 7.2s-.23-1.63-.94-2.35c-.9-.94-1.9-.95-2.36-1C16.88 3.6 12 3.6 12 3.6h-.01s-4.88 0-8.2.25c-.46.05-1.46.06-2.36 1C.72 5.57.5 7.2.5 7.2S.26 9.12.26 11.04v1.8c0 1.92.24 3.84.24 3.84s.23 1.63.94 2.35c.9.94 2.08.9 2.6 1 1.9.18 8 .24 8 .24s4.88-.01 8.2-.25c.46-.06 1.46-.07 2.36-1 .7-.73.94-2.36.94-2.36s.24-1.92.24-3.84v-1.8c0-1.92-.24-3.84-.24-3.84zM9.7 15.03V8.4l6.4 3.33-6.4 3.3z"/>
     </symbol>
+    <symbol id="ic-tw" viewBox="0 0 24 24">
+      <path fill="currentColor" d="M11.571 4.714h1.715v5.143H11.57zm4.715 0H18v5.143h-1.714zM6 0L1.714 4.286v15.428h5.143V24l4.286-4.286h3.428L22.286 12V0zm14.571 11.143l-3.428 3.428h-3.429l-3 3v-3H6.857V1.714h13.714z"/>
+    </symbol>
     <symbol id="ic-check" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.5 5 5 10-11"/></symbol>
     <symbol id="ic-x" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" d="M6 6l12 12M18 6 6 18"/></symbol>
     <symbol id="ic-out" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4M10 8l-4 4 4 4M6 12h10"/></symbol>
@@ -587,7 +590,7 @@ const NET = {
   tiktok:    { icono: 'ic-tt', clase: 'tt', nombre: 'TikTok' },
   instagram: { icono: 'ic-ig', clase: 'ig', nombre: 'Instagram' },
   youtube:   { icono: 'ic-yt', clase: 'yt', nombre: 'YouTube' },
-  twitch:    { icono: 'ic-play', clase: 'tw', nombre: 'Twitch' },
+  twitch:    { icono: 'ic-tw', clase: 'tw', nombre: 'Twitch' },
 };
 function netBadge(plataforma) {
   const n = NET[plataforma];
@@ -861,9 +864,17 @@ const VISTA = {
       meta.appendChild(el('span', null, 'Enviado ' + hace(it.created_at)));
       body.appendChild(meta);
 
+      // Quién decidió se muestra hasta el final, no solo mientras está aprobado:
+      // el que mandó el link quiere saber a quién agradecerle aunque el video
+      // ya haya salido en pantalla.
+      const APROBADOS_VISTA = ['approved', 'downloading', 'ready', 'playing', 'played'];
       const veredicto = el('div', 'verdict', v[2]);
-      if ((it.status === 'approved' || it.status === 'rejected') && it.decided_by) {
-        veredicto.textContent = v[2] + ' por ';
+      const rechazado = it.status === 'rejected';
+      const aprobado = APROBADOS_VISTA.indexOf(it.status) >= 0;
+      if (it.decided_by && (rechazado || aprobado)) {
+        veredicto.textContent = it.status === 'approved' || rechazado
+          ? v[2] + ' por '
+          : v[2] + ' · aprobado por ';
         const tag = el('span', 'mod-tag');
         tag.appendChild(avatar(it.decided_by, 'xs', it.decided_pic));
         tag.appendChild(el('b', null, it.decided_by));
