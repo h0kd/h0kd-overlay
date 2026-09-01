@@ -77,6 +77,17 @@ test('acepta las dos formas de link de TikTok', () => {
   }
 });
 
+test('el link largo de TikTok conserva el www que yt-dlp exige', () => {
+  const r = checkUrl('https://tiktok.com/@alguien/video/7412345678901234567?is_from_webapp=1');
+  assert.equal(r.ok, true);
+  if (r.ok) assert.equal(r.url, 'https://www.tiktok.com/@alguien/video/7412345678901234567');
+
+  // El corto redirige solo y su host es el que vale.
+  const c = checkUrl('https://vm.tiktok.com/ZM8abc123');
+  assert.equal(c.ok, true);
+  if (c.ok) assert.equal(c.url, 'https://vm.tiktok.com/ZM8abc123');
+});
+
 test('de TikTok no pasa un perfil', () => {
   for (const u of [
     'https://www.tiktok.com/@alguien',

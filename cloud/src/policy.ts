@@ -84,6 +84,14 @@ export function checkUrl(raw: string): UrlCheck {
     if (!okPath) {
       return { ok: false, reason: 'De TikTok solo se aceptan videos, no perfiles.' };
     }
+    // yt-dlp EXIGE el `www.` en los links largos de TikTok: sin él ni siquiera
+    // llega a su extractor y contesta "Unsupported URL". Sacar el www es lo
+    // correcto para normalizar cualquier otro dominio, y acá rompe todo.
+    return {
+      ok: true,
+      platform: 'tiktok',
+      url: `https://${corto ? host : 'www.tiktok.com'}${u.pathname}`,
+    };
   }
 
   // YouTube es la excepción a tirar la query: en /watch el id del video vive
