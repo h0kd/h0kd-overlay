@@ -14,7 +14,7 @@ test('acepta un reel de Instagram y normaliza la URL', () => {
 test('acepta twitch y youtube', () => {
   for (const [url, platform] of [
     ['https://clips.twitch.tv/SomeClipSlug', 'twitch'],
-    ['https://www.youtube.com/watch', 'youtube'],
+    ['https://www.youtube.com/watch?v=aB3xKq9_-1', 'youtube'],
     ['https://youtu.be/abc', 'youtube'],
   ] as const) {
     const r = checkUrl(url);
@@ -50,6 +50,18 @@ test('de Instagram solo pasan reels y posts, no perfiles', () => {
   assert.equal(checkUrl('https://instagram.com/algun_usuario').ok, false);
   assert.equal(checkUrl('https://instagram.com/stories/user/123/').ok, false);
   assert.equal(checkUrl('https://instagram.com/p/AbC123/').ok, true);
+});
+
+test('de YouTube conserva el id del video y tira el resto', () => {
+  const r = checkUrl('https://www.youtube.com/watch?v=aB3xKq9_-1&list=PL123&t=42s');
+  assert.equal(r.ok, true);
+  if (r.ok) {
+    assert.equal(r.platform, 'youtube');
+    assert.equal(r.url, 'https://youtube.com/watch?v=aB3xKq9_-1');
+  }
+  assert.equal(checkUrl('https://youtube.com/watch').ok, false);
+  assert.equal(checkUrl('https://youtube.com/watch?list=PL123').ok, false);
+  assert.equal(checkUrl('https://youtu.be/aB3xKq9_-1').ok, true);
 });
 
 test('acepta las dos formas de link de TikTok', () => {

@@ -86,6 +86,18 @@ export function checkUrl(raw: string): UrlCheck {
     }
   }
 
+  // YouTube es la excepción a tirar la query: en /watch el id del video vive
+  // ahí. Se conserva `v` y solo `v` — el resto son tracking, playlist y tiempo,
+  // que es justo lo que hay que dejar afuera. Sin esto, el link que pega
+  // cualquiera (youtube.com/watch?v=...) llegaba al agente como /watch pelado.
+  if (match.platform === 'youtube' && u.pathname === '/watch') {
+    const v = u.searchParams.get('v') ?? '';
+    if (!/^[A-Za-z0-9_-]{6,20}$/.test(v)) {
+      return { ok: false, reason: 'Ese link de YouTube no apunta a un video.' };
+    }
+    return { ok: true, platform: 'youtube', url: `https://${host}/watch?v=${v}` };
+  }
+
   return { ok: true, platform: match.platform, url: `https://${host}${u.pathname}` };
 }
 
