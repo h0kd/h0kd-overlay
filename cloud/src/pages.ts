@@ -607,9 +607,20 @@ function colorAvatar(nombre) {
   for (const c of (nombre || '')) n += c.charCodeAt(0);
   return 'av-' + (n % 5 + 1);
 }
-function avatar(nombre, clase) {
+function avatar(nombre, clase, foto) {
   const a = el('span', 'avatar ' + (clase || '') + ' ' + colorAvatar(nombre), iniciales(nombre));
   a.title = nombre || '';
+  // Las iniciales de color quedan de red: si no hay foto, o si el CDN falla,
+  // igual se distingue a la persona de un vistazo.
+  if (foto) {
+    const img = document.createElement('img');
+    img.src = foto;
+    img.alt = '';
+    img.referrerPolicy = 'no-referrer';
+    img.onerror = function () { img.remove(); a.textContent = iniciales(nombre); };
+    a.textContent = '';
+    a.appendChild(img);
+  }
   return a;
 }
 function fillChip(me) {
@@ -1198,10 +1209,21 @@ export function adminPage(): string {
        </div>
 
        <div id="tab-mods" class="tab-panel" hidden>
-         <div class="card">
-           <strong>Mods con acceso</strong>
-           <p class="hint" style="margin:6px 0 12px">Lista real de mods de tu canal, traída de Twitch. Marcá quiénes pueden entrar al panel de moderación.</p>
-           <div id="mods"></div>
+         <p class="hint" style="margin:0 0 12px">Lista real de mods de tu canal, traída de Twitch. Marcá quiénes pueden entrar al panel de moderación; los números son lo que decidió cada uno acá.</p>
+         <div class="card flush">
+           <div class="table-wrap">
+             <table class="data">
+               <thead><tr>
+                 <th>Moderador</th><th class="num">Acceso</th><th class="num">Aprobados</th>
+                 <th class="num">Rechazados</th><th class="num">Última acción</th><th></th>
+               </tr></thead>
+               <tbody id="mods"></tbody>
+             </table>
+           </div>
+         </div>
+         <div class="filter-bar" id="botsBar" hidden>
+           <span id="botsInfo"></span>
+           <button class="btn ghost sm" id="botsToggle">Mostrar bots</button>
          </div>
        </div>
 
@@ -1420,6 +1442,8 @@ const PILL = {
 
   // ── Historial global ──
   let historial = [];
+  // { tipo: 'viewer' | 'mod', quien } — el mismo historial sirve para "todo lo
+  // que mandó fulano" y para "todo lo que decidió mengano".
   let filtro = null;
   async function cargarHistorial() {
     const box = $('#history');
@@ -1438,10 +1462,20 @@ const PILL = {
     const box = $('#history');
     box.textContent = '';
     $('#historyFilter').hidden = !filtro;
-    if (filtro) $('#historyWho').textContent = 'Mostrando solo lo de ' + filtro;
-    const visibles = filtro ? historial.filter((it) => it.submitter_login === filtro) : historial;
+    if (filtro) {
+      $('#historyWho').textContent = filtro.tipo === 'mod'
+        ? 'Mostrando lo que decidió ' + filtro.quien
+        : 'Mostrando lo que mandó ' + filtro.quien;
+    }
+    const igual = (a, b) => String(a || '').toLowerCase() === String(b || '').toLowerCase();
+    const visibles = !filtro ? historial
+      : historial.filter((it) => filtro.tipo === 'mod'
+          ? igual(it.decided_by, filtro.quien)
+          : igual(it.submitter_login, filtro.quien));
     if (!visibles.length) {
-      box.appendChild(el('div', 'empty', filtro ? 'Ese viewer no tiene nada decidido todavía.' : 'Todavía no se decidió nada.'));
+      box.appendChild(el('div', 'empty', filtro
+        ? (filtro.tipo === 'mod' ? 'Ese mod todavía no decidió nada.' : 'Ese viewer no tiene nada decidido todavía.')
+        : 'Todavía no se decidió nada.'));
       return;
     }
     for (const it of visibles) {
@@ -1495,7 +1529,7 @@ const PILL = {
       const tr = el('tr');
       const quien = el('td');
       const celda = el('div', 'cell-user');
-      celda.appendChild(avatar(v.login));
+      celda.appendChild(avatar(v.login, null, v.pic));
       celda.appendChild(el('div', null, v.login));
       quien.appendChild(celda);
       tr.appendChild(quien);
@@ -1505,7 +1539,7 @@ const PILL = {
       tr.appendChild(el('td', 'num mono t-warn', String(v.pendientes)));
       const accion = el('td', 'num');
       const btn = el('button', 'btn sm', 'Ver historial');
-      btn.onclick = async () => { filtro = v.login; abrir('history'); await cargarHistorial(); };
+      btn.onclick = async () => { filtro = { tipo: 'viewer', quien: v.login }; abrir('history'); await cargarHistorial(); };
       accion.appendChild(btn);
       tr.appendChild(accion);
       cuerpo.appendChild(tr);
@@ -1513,30 +1547,109 @@ const PILL = {
   }
 
   // ── Moderadores ──
-  const box = $('#mods');
-  box.textContent = '';
-  $('#modCount').textContent = data.mods.filter((m) => m.authorized).length;
-  if (!data.mods.length) box.appendChild(el('div', 'empty', 'Tu canal no tiene mods en Twitch.'));
-  for (const m of data.mods) {
-    const row = el('div', 'mod-row');
-    const lab = el('label', 'sw');
-    const cb = el('input'); cb.type = 'checkbox'; cb.checked = m.authorized;
-    cb.onchange = async () => {
-      cb.disabled = true;
-      try {
-        await api('/api/admin/mods', { method: 'POST', headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ user_id: m.user_id, login: m.user_login, authorized: cb.checked }) });
-        $('#modCount').textContent = document.querySelectorAll('#mods input:checked').length;
-      } catch (e) { toast(e.message); cb.checked = !cb.checked; }
-      cb.disabled = false;
-    };
-    lab.appendChild(cb);
-    lab.appendChild(avatar(m.user_name || m.user_login));
-    lab.appendChild(el('span', 'name', m.user_name || m.user_login));
-    row.appendChild(lab);
-    if (!m.still_mod) row.appendChild(el('span', 'pill warn', 'ya no es mod en Twitch'));
-    box.appendChild(row);
+  // Los bots arrancan escondidos pero contados. Esconder sin decirlo es peor
+  // que mostrar de más: si a alguien le falta un nombre, tiene dónde buscarlo.
+  let verBots = false;
+  const cuerpoMods = $('#mods');
+
+  function pintarMods() {
+    cuerpoMods.textContent = '';
+    $('#modCount').textContent = data.mods.filter((m) => m.authorized).length;
+
+    const bots = data.mods.filter((m) => m.es_bot);
+    const barra = $('#botsBar');
+    barra.hidden = !bots.length;
+    if (bots.length) {
+      $('#botsInfo').textContent = bots.length === 1
+        ? '1 bot escondido de la lista'
+        : bots.length + ' bots escondidos de la lista';
+      $('#botsToggle').textContent = verBots ? 'Ocultar bots' : 'Mostrar bots';
+    }
+
+    const visibles = data.mods.filter((m) => verBots || !m.es_bot);
+    if (!visibles.length) {
+      const tr = el('tr');
+      const td = el('td', 'empty', 'Tu canal no tiene mods en Twitch.');
+      td.colSpan = 6;
+      tr.appendChild(td);
+      cuerpoMods.appendChild(tr);
+      return;
+    }
+
+    for (const m of visibles) {
+      const nombre = m.user_name || m.user_login;
+      const tr = el('tr');
+
+      const quien = el('td');
+      const celda = el('div', 'cell-user');
+      celda.appendChild(avatar(nombre, null, m.pic));
+      const bloque = el('div');
+      bloque.appendChild(document.createTextNode(nombre));
+      if (!m.still_mod) bloque.appendChild(el('span', null, 'ya no es mod en Twitch'));
+      else if (m.es_bot) bloque.appendChild(el('span', null, 'bot'));
+      celda.appendChild(bloque);
+      quien.appendChild(celda);
+      tr.appendChild(quien);
+
+      const acceso = el('td', 'num');
+      // El dueño del canal no tiene casilla: su acceso no se puede quitar, y
+      // una casilla marcada que no hace nada al tocarla es peor que ninguna.
+      if (m.es_dueno) {
+        acceso.appendChild(el('span', 'pill', 'sos vos'));
+        tr.appendChild(acceso);
+        tr.appendChild(el('td', 'num mono t-ok', String(m.aprobados)));
+        tr.appendChild(el('td', 'num mono t-bad', String(m.rechazados)));
+        tr.appendChild(el('td', 'num', m.ultima_accion ? hace(m.ultima_accion) : '—'));
+        const propio = el('td', 'num');
+        if (m.aprobados || m.rechazados) {
+          const b = el('button', 'btn sm', 'Ver historial');
+          b.onclick = async () => {
+            filtro = { tipo: 'mod', quien: m.user_login };
+            abrir('history');
+            await cargarHistorial();
+          };
+          propio.appendChild(b);
+        }
+        tr.appendChild(propio);
+        cuerpoMods.appendChild(tr);
+        continue;
+      }
+      const cb = el('input'); cb.type = 'checkbox'; cb.checked = m.authorized;
+      cb.title = 'Puede entrar al panel de moderación';
+      cb.onchange = async () => {
+        cb.disabled = true;
+        try {
+          await api('/api/admin/mods', { method: 'POST', headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ user_id: m.user_id, login: m.user_login, authorized: cb.checked }) });
+          m.authorized = cb.checked;
+          $('#modCount').textContent = data.mods.filter((x) => x.authorized).length;
+        } catch (e) { toast(e.message); cb.checked = !cb.checked; }
+        cb.disabled = false;
+      };
+      acceso.appendChild(cb);
+      tr.appendChild(acceso);
+
+      tr.appendChild(el('td', 'num mono t-ok', String(m.aprobados)));
+      tr.appendChild(el('td', 'num mono t-bad', String(m.rechazados)));
+      tr.appendChild(el('td', 'num', m.ultima_accion ? hace(m.ultima_accion) : '—'));
+
+      const accion = el('td', 'num');
+      if (m.aprobados || m.rechazados) {
+        const btn = el('button', 'btn sm', 'Ver historial');
+        btn.onclick = async () => {
+          filtro = { tipo: 'mod', quien: m.user_login };
+          abrir('history');
+          await cargarHistorial();
+        };
+        accion.appendChild(btn);
+      }
+      tr.appendChild(accion);
+      cuerpoMods.appendChild(tr);
+    }
   }
+
+  $('#botsToggle').onclick = () => { verBots = !verBots; pintarMods(); };
+  pintarMods();
 
   // ── Ajustes ──
   const KEYS = ['cooldown_seconds','max_pending_per_user','max_duration_seconds','max_filesize_mb','max_resolution','playback_gap_seconds'];

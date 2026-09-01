@@ -482,7 +482,49 @@ app.get('/api/admin/overview', async (c) => {
       })),
   ];
 
-  return c.json({ mods: rows, settings: await q.getSettings(c.env.DB, channel.channel_id) });
+  // Actividad por mod. `decided_by` guarda el login del que decidió, que es
+  // exactamente lo mismo que muestra el panel, así que empareja derecho.
+  const actividad = await c.env.DB.prepare(
+    `SELECT LOWER(decided_by) AS login,
+            SUM(CASE WHEN status IN ${APROBADOS} THEN 1 ELSE 0 END) AS aprobados,
+            SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END)    AS rechazados,
+            MAX(decided_at)                                          AS ultima
+       FROM queue_items
+      WHERE channel_id = ? AND decided_by IS NOT NULL AND decided_by <> ''
+      GROUP BY LOWER(decided_by)`,
+  )
+    .bind(channel.channel_id)
+    .all<{ login: string; aprobados: number; rechazados: number; ultima: number | null }>();
+  const porMod = new Map((actividad.results ?? []).map((r) => [r.login, r]));
+
+  // El broadcaster va en la tabla aunque Twitch no lo liste como mod de su
+  // propio canal: es quien más decide, y sin esta fila la tabla dice que nadie
+  // decidió nunca nada mientras la cola muestra lo contrario.
+  rows.unshift({
+    user_id: channel.channel_id,
+    user_login: channel.twitch_login,
+    user_name: channel.twitch_login,
+    still_mod: true,
+    authorized: true,
+  });
+
+  const fotos = await tw.getUserPics(c.env, rows.map((r) => r.user_login), token);
+
+  const conDatos = rows.map((r) => {
+    const login = r.user_login.toLowerCase();
+    const act = porMod.get(login);
+    return {
+      ...r,
+      es_dueno: r.user_id === channel.channel_id,
+      pic: fotos.get(login) ?? null,
+      es_bot: BOTS.has(login),
+      aprobados: act?.aprobados ?? 0,
+      rechazados: act?.rechazados ?? 0,
+      ultima_accion: act?.ultima ?? null,
+    };
+  });
+
+  return c.json({ mods: conDatos, settings: await q.getSettings(c.env.DB, channel.channel_id) });
 });
 
 app.post('/api/admin/mods', async (c) => {
@@ -500,6 +542,18 @@ app.post('/api/admin/mods', async (c) => {
   );
   return c.json({ ok: true });
 });
+
+/**
+ * Cuentas de bot conocidas. No hay forma de preguntarle a Twitch si una cuenta
+ * es un bot, así que esto es una lista a mano: cubre los sospechosos de siempre
+ * y nada más. No se esconde nada, se marca — la UI decide si mostrarlos.
+ */
+const BOTS = new Set([
+  'nightbot', 'streamelements', 'streamlabs', 'moobot', 'fossabot', 'wizebot',
+  'phantombot', 'botisimo', 'coebot', 'deepbot', 'ankhbot', 'vivbot', 'sery_bot',
+  'spanixbot', 'own3d', 'kofistreambot', 'soundalerts', 'pretzelrocks',
+  'lumiastream', 'tangiabot', 'creatisbot', 'commanderroot', 'streamstickers',
+]);
 
 /** Estados que cuentan como "todavía en juego" en cualquier consulta. */
 const EN_JUEGO = "('submitted','pending_review','approved','downloading','ready','playing')";
@@ -572,7 +626,15 @@ app.get('/api/admin/viewers', async (c) => {
     .bind(auth.channel.channel_id)
     .all<{ login: string; enviados: number; aprobados: number; rechazados: number; pendientes: number }>();
 
-  return c.json({ viewers: res.results ?? [] });
+  const viewers = res.results ?? [];
+  const token = await broadcasterToken(c.env, auth.channel.channel_id);
+  const fotos = token
+    ? await tw.getUserPics(c.env, viewers.map((v) => v.login), token)
+    : new Map<string, string>();
+
+  return c.json({
+    viewers: viewers.map((v) => ({ ...v, pic: fotos.get(v.login.toLowerCase()) ?? null })),
+  });
 });
 
 app.post('/api/admin/settings', async (c) => {

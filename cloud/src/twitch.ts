@@ -186,6 +186,34 @@ export async function getModerators(
   return out;
 }
 
+/**
+ * Fotos de perfil por login, en una sola llamada.
+ *
+ * Helix acepta hasta 100 `login` por request, así que una lista de mods o de
+ * viewers entra entera y no hay que pedir de a uno. Si la llamada falla se
+ * devuelve un mapa vacío a propósito: quedarse sin fotos es cosmético, y una
+ * página de administración que no carga porque Twitch tosió, no.
+ */
+export async function getUserPics(
+  env: Env,
+  logins: string[],
+  token: string,
+): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  const unicos = [...new Set(logins.map((l) => l.toLowerCase()).filter(Boolean))];
+  for (let i = 0; i < unicos.length; i += 100) {
+    const q = new URLSearchParams();
+    for (const l of unicos.slice(i, i + 100)) q.append('login', l);
+    try {
+      const body = await helix<{ data: TwitchUser[] }>(env, `/users?${q}`, token);
+      for (const u of body.data) out.set(u.login.toLowerCase(), u.profile_image_url);
+    } catch {
+      /* sin fotos se sigue igual */
+    }
+  }
+  return out;
+}
+
 // ── EventSub (transporte webhook) ────────────────────────────────────────────
 
 const STREAM_EVENTS = ['stream.online', 'stream.offline'] as const;
