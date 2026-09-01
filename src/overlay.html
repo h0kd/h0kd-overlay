@@ -179,7 +179,9 @@
       video.volume = 1.0;
 
       let done = false;
+      let guard = null;
       const started = Date.now();
+
       function finish(reason) {
         if (done) return;
         done = true;
@@ -198,10 +200,25 @@
       // Red de contención: si el archivo no dispara 'ended' (códec raro, red
       // cortada), el pedido no puede quedarse trabado para siempre bloqueando
       // la cola entera.
-      const guard = setTimeout(function () {
-        warn('Video request sin \'ended\'; se cierra por tiempo:', data.itemId);
-        finish('error');
-      }, 60000);
+      //
+      // El plazo NO puede ser fijo. /admin deja aprobar hasta 120 s, así que
+      // un tope de 60 cortaría el video por la mitad, en pantalla y en vivo, y
+      // encima lo reportaría como error. Arranca corto —lo que tarda en abrir
+      // un mp4 que ya está en disco— y se rearma con la duración real apenas
+      // se conoce.
+      function armGuard(ms) {
+        clearTimeout(guard);
+        guard = setTimeout(function () {
+          warn('Video request sin \'ended\'; se cierra por tiempo:', data.itemId);
+          finish('error');
+        }, ms);
+      }
+      armGuard(30000);
+
+      video.addEventListener('loadedmetadata', function () {
+        const d = isFinite(video.duration) && video.duration > 0 ? video.duration : 0;
+        armGuard(Math.round((d + 15) * 1000));
+      });
 
       video.addEventListener('ended', function () { finish('ended'); });
       video.addEventListener('error', function () {
@@ -210,6 +227,18 @@
       });
 
       stage.appendChild(video);
+      // OBS deja arrancar con sonido sin que nadie toque nada; un navegador
+      // normal (alguien abriendo el overlay en Chrome para mirarlo) lo bloquea.
+      // Sin este catch, ese bloqueo se vería como un cuadro congelado hasta que
+      // saltara el plazo, con la cola detrás esperando.
+      const playing = video.play();
+      if (playing && playing.catch) {
+        playing.catch(function (e) {
+          err('No se pudo arrancar el pedido (¿autoplay bloqueado?):', e);
+          finish('error');
+        });
+      }
+
       vrPlaying = data.itemId;
       wsSend({ type: 'requestStarted', itemId: data.itemId });
       reportBusy();

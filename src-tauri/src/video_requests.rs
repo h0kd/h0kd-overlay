@@ -220,6 +220,47 @@ impl Playback {
     }
 }
 
+/// Los límites que manda el canal.
+///
+/// El DO los envía en `hello` y en cada `settings.update`. Hasta que llegue el
+/// primero valen los de fábrica, que son los mismos que trae el pipeline.
+#[derive(Clone)]
+struct ChannelLimits {
+    max_duration_seconds: u32,
+    max_filesize_mb: u32,
+    /// Lado corto de la salida: 720 o 1080.
+    max_resolution: u32,
+}
+
+impl Default for ChannelLimits {
+    fn default() -> Self {
+        let d = core::PipelineConfig::default();
+        ChannelLimits {
+            max_duration_seconds: d.max_duration_seconds,
+            max_filesize_mb: d.max_filesize_mb,
+            max_resolution: d.max_short_side,
+        }
+    }
+}
+
+impl ChannelLimits {
+    /// Adopta lo que venga en `payload.settings`. Lo que falte o venga con un
+    /// valor imposible se deja como estaba: el agente no confia en que del otro
+    /// lado siempre haya un DO sano, y quedarse con el límite anterior es mejor
+    /// que recortar todos los videos a cero.
+    fn apply(&mut self, s: &Value) {
+        if let Some(v) = s["max_duration_seconds"].as_u64() {
+            self.max_duration_seconds = v.clamp(5, 120) as u32;
+        }
+        if let Some(v) = s["max_filesize_mb"].as_u64() {
+            self.max_filesize_mb = v.clamp(1, 500) as u32;
+        }
+        if let Some(v) = s["max_resolution"].as_str() {
+            self.max_resolution = if v == "1080" { 1080 } else { 720 };
+        }
+    }
+}
+
 // ── Worker ───────────────────────────────────────────────────────────────────
 
 pub async fn worker_loop(state: AppState, mut rx: mpsc::Receiver<VrCmd>) {
@@ -490,6 +531,7 @@ async fn session(
     println!("[VideoRequests] Conectado al canal '{}'.", pairing.channel_login);
 
     let media = media_dir(data_dir);
+    let mut limits = ChannelLimits::default();
     let mut status_tick = tokio::time::interval(STATUS_EVERY);
     let mut play_tick = tokio::time::interval(TICK);
     let _ = send_ready(&mut tx_ws, data_dir).await;
@@ -506,7 +548,7 @@ async fn session(
                     // reiniciar la app. Son tres `is_file()`, no cuesta nada.
                     let bins = core::binaries::resolve(data_dir);
                     if let Some(end) = handle_hub_message(
-                        state, &v, &bins, &media, playback, shared, &mut tx_ws,
+                        state, &v, &bins, &media, playback, &mut limits, shared, &mut tx_ws,
                     ).await {
                         return end;
                     }
@@ -697,14 +739,16 @@ async fn apply_overlay_event(ev: OverlayEvent, playback: &mut Playback, tx: &mut
 
 /// Devuelve `Some(SessionEnd)` solo si hay que cortar la sesión.
 async fn handle_hub_message(
-    _state: &AppState,
+    state: &AppState,
     v: &Value,
     bins: &core::Binaries,
     media: &Path,
     playback: &mut Playback,
+    limits: &mut ChannelLimits,
     shared: &SharedVrStatus,
     tx: &mut WsSink,
 ) -> Option<SessionEnd> {
+    let data_dir = state.data_dir.as_path();
     let kind = v["type"].as_str().unwrap_or("");
     let p = &v["payload"];
 
@@ -718,6 +762,7 @@ async fn handle_hub_message(
             if let Some(gap) = p["settings"]["playback_gap_seconds"].as_u64() {
                 playback.gap = Duration::from_secs(gap);
             }
+            limits.apply(&p["settings"]);
         }
 
         "resync" => {
@@ -750,7 +795,7 @@ async fn handle_hub_message(
         "metadata.request" => {
             let item_id = p["item_id"].as_str().unwrap_or("").to_string();
             let url = p["source_url"].as_str().unwrap_or("").to_string();
-            let cfg = pipeline_config(media);
+            let cfg = pipeline_config(data_dir, limits);
             let result = core::pipeline::fetch_metadata(bins, &url, &cfg).await;
             let payload = match result {
                 Ok((_, meta)) => json!({
@@ -776,7 +821,7 @@ async fn handle_hub_message(
         "download.request" => {
             let item_id = p["item_id"].as_str().unwrap_or("").to_string();
             let url = p["source_url"].as_str().unwrap_or("").to_string();
-            let cfg = pipeline_config(media);
+            let cfg = pipeline_config(data_dir, limits);
             let result = core::pipeline::prepare(bins, &url, &item_id, media, &cfg).await;
             let payload = match result {
                 Ok(prepared) => {
@@ -837,6 +882,7 @@ async fn handle_hub_message(
             if let Some(gap) = p["settings"]["playback_gap_seconds"].as_u64() {
                 playback.gap = Duration::from_secs(gap);
             }
+            limits.apply(&p["settings"]);
         }
 
         _ => {} // tipo desconocido: se ignora en silencio, como pide el contrato
@@ -844,8 +890,25 @@ async fn handle_hub_message(
     None
 }
 
-fn pipeline_config(_media: &Path) -> core::PipelineConfig {
-    core::PipelineConfig::default()
+/// La config con la que corre cada pedido.
+///
+/// Dos cosas que el DO ya mandaba y acá se descartaban: los límites del canal
+/// (se recortaba todo a los 30 s de fábrica aunque /admin dijera otra cosa) y,
+/// peor, las cookies de Instagram. Sin ellas el archivo que exporta el streamer
+/// no lo usaba nadie: la UI decía "cargadas" y yt-dlp seguía yendo anónimo.
+fn pipeline_config(data_dir: &Path, limits: &ChannelLimits) -> core::PipelineConfig {
+    let mut cfg = core::PipelineConfig::default();
+    cfg.max_duration_seconds = limits.max_duration_seconds;
+    cfg.max_filesize_mb = limits.max_filesize_mb;
+    // El lado corto manda; el largo sale de 16:9 sobre él (720→1280, 1080→1920).
+    cfg.max_short_side = limits.max_resolution;
+    cfg.max_long_side = limits.max_resolution * 16 / 9;
+    // Solo si el archivo existe: un `--cookies` apuntando a la nada le hace
+    // abortar la extracción entera a yt-dlp.
+    if core::cookies::read_status(data_dir).present {
+        cfg.cookies = Some(core::cookies::cookies_path(data_dir));
+    }
+    cfg
 }
 
 /// Un fallo por login degrada el estado de las cookies. El archivo no dice si
