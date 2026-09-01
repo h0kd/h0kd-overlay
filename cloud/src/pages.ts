@@ -243,6 +243,7 @@ const CSS = `
   .net.ig { background: radial-gradient(circle at 30% 110%, #fdc468 8%, #df4996 50%, #7238b8 95%); }
   .net.tt { background: #101014; box-shadow: 0 0 0 1px rgba(255,255,255,.14) inset; }
   .net.yt { background: #e62117; }
+  .net.kp { background: #1f8a70; }
   .link-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
   .link-title { font-weight: 600; font-size: 16px; line-height: 1.35; }
   .link-meta { color: var(--muted); font-size: 13.5px; display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: center; }
@@ -514,6 +515,9 @@ const ICONS = `<svg width="0" height="0" style="position:absolute" aria-hidden="
     <symbol id="ic-tw" viewBox="0 0 24 24">
       <path fill="currentColor" d="M11.571 4.714h1.715v5.143H11.57zm4.715 0H18v5.143h-1.714zM6 0L1.714 4.286v15.428h5.143V24l4.286-4.286h3.428L22.286 12V0zm14.571 11.143l-3.428 3.428h-3.429l-3 3v-3H6.857V1.714h13.714z"/>
     </symbol>
+    <symbol id="ic-kp" viewBox="0 0 24 24">
+      <path fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" d="M7 4.5v15M17 4.5l-9 8.2M9.6 11.2 17 19.5"/>
+    </symbol>
     <symbol id="ic-check" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.5 5 5 10-11"/></symbol>
     <symbol id="ic-x" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" d="M6 6l12 12M18 6 6 18"/></symbol>
     <symbol id="ic-out" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4M10 8l-4 4 4 4M6 12h10"/></symbol>
@@ -591,6 +595,7 @@ const NET = {
   instagram: { icono: 'ic-ig', clase: 'ig', nombre: 'Instagram' },
   youtube:   { icono: 'ic-yt', clase: 'yt', nombre: 'YouTube' },
   twitch:    { icono: 'ic-tw', clase: 'tw', nombre: 'Twitch' },
+  kappa:     { icono: 'ic-kp', clase: 'kp', nombre: 'kappa.lol' },
 };
 function netBadge(plataforma) {
   const n = NET[plataforma];
@@ -604,7 +609,8 @@ function plataformasDe(hosts) {
   for (const h of hosts || []) {
     const p = h.indexOf('tiktok') >= 0 ? 'tiktok'
       : h.indexOf('instagram') >= 0 ? 'instagram'
-      : (h.indexOf('youtu') >= 0 ? 'youtube' : 'twitch');
+      : h.indexOf('youtu') >= 0 ? 'youtube'
+      : (h.indexOf('kappa') >= 0 ? 'kappa' : 'twitch');
     if (vistas.indexOf(p) < 0) vistas.push(p);
   }
   return vistas;

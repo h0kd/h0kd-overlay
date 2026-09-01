@@ -98,6 +98,35 @@ test('de TikTok no pasa un perfil', () => {
   }
 });
 
+test('acepta un archivo de kappa.lol y lo normaliza al id', () => {
+  for (const u of [
+    'https://kappa.lol/qMiVeE',
+    'https://kappa.lol/qMiVeE.mp4',
+    'https://kappa.lol/qMiVeE/lo-que-sea.mp4?x=1',
+    'https://www.kappa.lol/qMiVeE',
+  ]) {
+    const r = checkUrl(u);
+    assert.equal(r.ok, true, u);
+    if (r.ok) {
+      assert.equal(r.platform, 'kappa');
+      assert.equal(r.url, 'https://kappa.lol/qMiVeE');
+    }
+  }
+});
+
+test('de kappa.lol no pasan el index, las páginas del sitio ni los subdominios', () => {
+  for (const u of [
+    'https://kappa.lol/',
+    'https://kappa.lol/uploaders',
+    'https://kappa.lol/api/upload',
+    'https://kappa.lol/delete?abc',
+    'https://w.kappa.lol/qMiVeE',
+    'https://kappa.lol/qM',
+  ]) {
+    assert.equal(checkUrl(u).ok, false, u);
+  }
+});
+
 test('la política cierra envíos con el stream offline', () => {
   const r = checkPolicy(
     { submissions_open: false, cooldown_seconds: 60, max_pending_per_user: 3 },

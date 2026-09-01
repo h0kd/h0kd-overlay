@@ -15,6 +15,8 @@ pub enum Platform {
     Tiktok,
     Twitch,
     Youtube,
+    /// kappa.lol: un host de archivos, no una red. Sirve el mp4 directo.
+    Kappa,
 }
 
 impl Platform {
@@ -24,6 +26,7 @@ impl Platform {
             Platform::Tiktok => "tiktok",
             Platform::Twitch => "twitch",
             Platform::Youtube => "youtube",
+            Platform::Kappa => "kappa",
         }
     }
 
@@ -33,6 +36,7 @@ impl Platform {
             "tiktok" => Some(Platform::Tiktok),
             "twitch" => Some(Platform::Twitch),
             "youtube" => Some(Platform::Youtube),
+            "kappa" => Some(Platform::Kappa),
             _ => None,
         }
     }
@@ -53,6 +57,8 @@ const ALLOWED: &[(&str, Platform)] = &[
     ("clips.twitch.tv", Platform::Twitch),
     ("youtube.com", Platform::Youtube),
     ("youtu.be", Platform::Youtube),
+    // Solo el host pelado (ver `check`): w.kappa.lol y compañía son otra cosa.
+    ("kappa.lol", Platform::Kappa),
 ];
 
 /// Verifica que la URL siga siendo una que aceptamos tocar.
@@ -118,8 +124,27 @@ pub fn check(url: &str) -> Result<Platform> {
             "De TikTok solo se aceptan videos, no perfiles.",
         ));
     }
+    if platform == Platform::Kappa && (host != "kappa.lol" || !is_kappa_file_path(path)) {
+        return Err(ErrorDetail::new(
+            ErrorCode::UnsupportedPlatform,
+            "De kappa.lol solo se aceptan links a un archivo (kappa.lol/abc123).",
+        ));
+    }
 
     Ok(platform)
+}
+
+/// kappa.lol sirve un archivo por link: `kappa.lol/<id>`, con extensión y
+/// segmentos posteriores opcionales que el servidor ignora. El Worker ya lo
+/// normalizó al id pelado, pero acá se acepta la forma completa igual: la
+/// revalidación es sobre el dominio y la forma, no sobre la normalización.
+fn is_kappa_file_path(path: &str) -> bool {
+    let clean = path.split(['?', '#']).next().unwrap_or(path);
+    let primero = clean.trim_start_matches('/').split('/').next().unwrap_or("");
+    let id = primero.split('.').next().unwrap_or("");
+    (3..=32).contains(&id.len())
+        && es_codigo(id)
+        && !matches!(id, "uploaders" | "delete" | "api")
 }
 
 /// TikTok tiene dos formas de link y hay que aceptar las dos, porque la app
@@ -197,6 +222,32 @@ mod tests {
             "https://www.tiktok.com/@alguien",
             "https://www.tiktok.com/@alguien/video/",
             "https://www.tiktok.com/foo/bar/baz",
+        ] {
+            assert!(check(u).is_err(), "{u} no debería pasar");
+        }
+    }
+
+    #[test]
+    fn acepta_un_archivo_de_kappa() {
+        for u in [
+            "https://kappa.lol/qMiVeE",
+            "https://kappa.lol/qMiVeE.mp4",
+            "https://kappa.lol/qMiVeE/lo-que-sea.mp4",
+            "https://www.kappa.lol/qMiVeE",
+        ] {
+            assert_eq!(check(u).unwrap(), Platform::Kappa, "{u}");
+        }
+    }
+
+    #[test]
+    fn de_kappa_no_pasan_el_index_ni_los_subdominios() {
+        for u in [
+            "https://kappa.lol/",
+            "https://kappa.lol",
+            "https://kappa.lol/uploaders",
+            "https://kappa.lol/api/upload",
+            "https://w.kappa.lol/qMiVeE",
+            "https://kappa.lol/qM",
         ] {
             assert!(check(u).is_err(), "{u} no debería pasar");
         }

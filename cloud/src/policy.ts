@@ -19,6 +19,10 @@ const ALLOWED: Array<{ host: string; platform: Platform }> = [
   { host: 'clips.twitch.tv', platform: 'twitch' },
   { host: 'youtube.com', platform: 'youtube' },
   { host: 'youtu.be', platform: 'youtube' },
+  // kappa.lol es un host de archivos (el uploader de Chatterino), no una red:
+  // sirve el mp4 directo y yt-dlp lo baja con su extractor genérico. Solo el
+  // host pelado: sus subdominios (w.kappa.lol) son otra cosa.
+  { host: 'kappa.lol', platform: 'kappa' },
 ];
 
 export type UrlCheck =
@@ -60,8 +64,22 @@ export function checkUrl(raw: string): UrlCheck {
   if (!match) {
     return {
       ok: false,
-      reason: 'Por ahora solo se aceptan links de Instagram, Twitch y YouTube.',
+      reason: 'Por ahora solo se aceptan links de TikTok, Instagram, YouTube, Twitch y kappa.lol.',
     };
+  }
+
+  // kappa.lol: un archivo por link, `kappa.lol/<id>`. La extensión y lo que
+  // venga después del id son opcionales y el servidor los ignora, así que se
+  // normaliza al id pelado. El index (`/`) y las páginas del sitio no pasan.
+  if (match.platform === 'kappa') {
+    if (host !== 'kappa.lol') {
+      return { ok: false, reason: 'De kappa.lol solo se aceptan links a un archivo.' };
+    }
+    const m = /^\/([A-Za-z0-9]{3,32})(?:\.[A-Za-z0-9]{1,8})?(?:\/.*)?$/.exec(u.pathname);
+    if (!m || m[1] === 'uploaders' || m[1] === 'delete' || m[1] === 'api') {
+      return { ok: false, reason: 'De kappa.lol solo se aceptan links a un archivo (kappa.lol/abc123).' };
+    }
+    return { ok: true, platform: 'kappa', url: `https://kappa.lol/${m[1]}` };
   }
 
   // Instagram: solo reels y posts de video. Perfiles y stories no.

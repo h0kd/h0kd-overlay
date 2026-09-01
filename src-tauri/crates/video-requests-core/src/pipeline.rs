@@ -17,6 +17,7 @@ use crate::allowlist::{self, Platform};
 use crate::binaries::Binaries;
 use crate::error::Result;
 use crate::ffmpeg::{self, Encoder, VideoInfo};
+use crate::kappa;
 use crate::ytdlp::{self, Metadata};
 use std::path::{Path, PathBuf};
 
@@ -65,6 +66,12 @@ pub async fn fetch_metadata(
     cfg: &PipelineConfig,
 ) -> Result<(Platform, Metadata)> {
     let platform = allowlist::check(url)?;
+    // kappa.lol sirve el archivo directo: yt-dlp no tiene de dónde sacar
+    // título ni duración, así que la metadata se arma por otro camino.
+    if platform == Platform::Kappa {
+        let meta = kappa::fetch_metadata(&bins.ffprobe, url, cfg.max_filesize_mb).await?;
+        return Ok((platform, meta));
+    }
     let cookies = cfg.cookies.as_deref();
     let meta = ytdlp::fetch_metadata(&bins.ytdlp, url, platform, cookies).await?;
     Ok((platform, meta))

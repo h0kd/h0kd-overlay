@@ -23,6 +23,7 @@ pub mod binaries;
 pub mod cookies;
 pub mod error;
 pub mod ffmpeg;
+pub mod kappa;
 pub mod pipeline;
 pub mod proc;
 pub mod ytdlp;

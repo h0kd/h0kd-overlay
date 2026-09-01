@@ -71,7 +71,16 @@ struct ProbeFormat {
 /// Es el chequeo que separa "yt-dlp escribió algo" de "esto es un video". Si
 /// falla, el ítem no llega a recodificarse y jamás llega al overlay.
 pub async fn probe(ffprobe: &Path, input: &Path) -> Result<VideoInfo> {
-    let input_str = input.to_string_lossy().into_owned();
+    probe_input(ffprobe, &input.to_string_lossy()).await
+}
+
+/// Lo mismo que `probe`, pero sobre lo que ffprobe acepte como entrada: un
+/// archivo o una URL https. Con una URL lee solo los encabezados del contenedor
+/// (rangos HTTP), que es lo que permite saber la duración de un archivo directo
+/// sin bajarlo. Quien llama es responsable de que la URL haya pasado la
+/// allowlist: acá no se vuelve a validar.
+pub async fn probe_input(ffprobe: &Path, input: &str) -> Result<VideoInfo> {
+    let input_str = input.to_string();
     let args = vec![
         "-v".to_string(),
         "error".to_string(),
