@@ -762,6 +762,7 @@ const VISTA = {
   playing:        ['ok',   'En pantalla', 'Saliendo en el stream ahora'],
   played:         ['ok',   'Reproducido', 'Se reprodujo en el stream'],
   rejected:       ['bad',  'Rechazado',   'Rechazado'],
+  rejected_auto:  ['bad',  'Rechazado',   'Rechazado sin pasar por un mod'],
   failed:         ['bad',  'Falló',       'No se pudo preparar el video'],
   cleared:        ['',     'Sin usar',    'La cola se limpió al terminar el stream'],
 };
@@ -838,7 +839,7 @@ const VISTA = {
       if ((it.status === 'approved' || it.status === 'rejected') && it.decided_by) {
         veredicto.textContent = v[2] + ' por ';
         const tag = el('span', 'mod-tag');
-        tag.appendChild(avatar(it.decided_by, 'xs'));
+        tag.appendChild(avatar(it.decided_by, 'xs', it.decided_pic));
         tag.appendChild(el('b', null, it.decided_by));
         veredicto.appendChild(tag);
         if (it.decided_at) veredicto.appendChild(el('span', null, ' · ' + hace(it.decided_at)));
@@ -851,7 +852,10 @@ const VISTA = {
       const explicacion = it.decided_reason || it.error;
       if (explicacion) {
         const motivo = el('div', 'reason');
-        motivo.appendChild(el('b', null, it.decided_reason ? 'Motivo: ' : 'Falló: '));
+        // Un rechazo automático tiene motivo, no falla: el video estaba fuera de
+        // las reglas del canal y nadie tuvo que mirarlo.
+        const esMotivo = it.decided_reason || it.status === 'rejected_auto';
+        motivo.appendChild(el('b', null, esMotivo ? 'Motivo: ' : 'Falló: '));
         motivo.appendChild(el('span', null, explicacion));
         body.appendChild(motivo);
       }
@@ -950,11 +954,12 @@ export function modPage(): string {
 const LABEL = {
   pending_review: 'esperando revisión', approved: 'aprobado', downloading: 'descargando',
   ready: 'listo', playing: 'reproduciendo', failed: 'falló', played: 'se reprodujo',
-  rejected: 'rechazado', cleared: 'se limpió al terminar el stream',
+  rejected: 'rechazado', rejected_auto: 'rechazado automáticamente',
+  cleared: 'se limpió al terminar el stream',
 };
 const PILL = {
   pending_review: 'warn', approved: 'ok', downloading: 'ok', ready: 'ok', playing: 'ok',
-  played: 'ok', rejected: 'bad', failed: 'bad', cleared: '',
+  played: 'ok', rejected: 'bad', rejected_auto: 'bad', failed: 'bad', cleared: '',
 };
 
 (async function () {
@@ -994,7 +999,7 @@ const PILL = {
 
     const body = el('div', 'link-body');
     const byline = el('div', 'byline');
-    byline.appendChild(avatar(it.submitter_login));
+    byline.appendChild(avatar(it.submitter_login, null, it.submitter_pic));
     byline.appendChild(el('b', null, it.submitter_login));
     byline.appendChild(el('span', null, ' · ' + hace(it.created_at)));
     body.appendChild(byline);
@@ -1125,7 +1130,7 @@ const PILL = {
       row.appendChild(miniatura(it, it.platform !== 'instagram' && it.platform !== 'tiktok'));
       const body = el('div', 'link-body');
       const byline = el('div', 'byline');
-      byline.appendChild(avatar(it.submitter_login));
+      byline.appendChild(avatar(it.submitter_login, null, it.submitter_pic));
       byline.appendChild(el('b', null, it.submitter_login));
       byline.appendChild(el('span', null, ' · ' + hace(it.created_at)));
       body.appendChild(byline);
@@ -1269,11 +1274,12 @@ export function adminPage(): string {
 const LABEL = {
   pending_review: 'esperando revisión', approved: 'aprobado', downloading: 'descargando',
   ready: 'listo', playing: 'reproduciendo', failed: 'falló', played: 'se reprodujo',
-  rejected: 'rechazado', cleared: 'se limpió al terminar el stream',
+  rejected: 'rechazado', rejected_auto: 'rechazado automáticamente',
+  cleared: 'se limpió al terminar el stream',
 };
 const PILL = {
   pending_review: 'warn', approved: 'ok', downloading: 'ok', ready: 'ok', playing: 'ok',
-  played: 'ok', rejected: 'bad', failed: 'bad', cleared: '',
+  played: 'ok', rejected: 'bad', rejected_auto: 'bad', failed: 'bad', cleared: '',
 };
 
 (async function () {
@@ -1354,7 +1360,7 @@ const PILL = {
     row.appendChild(miniatura(it, it.platform !== 'instagram' && it.platform !== 'tiktok'));
     const body = el('div', 'link-body');
     const byline = el('div', 'byline');
-    byline.appendChild(avatar(it.submitter_login));
+    byline.appendChild(avatar(it.submitter_login, null, it.submitter_pic));
     byline.appendChild(el('b', null, it.submitter_login));
     byline.appendChild(el('span', null, ' · ' + hace(it.created_at)));
     body.appendChild(byline);
@@ -1483,7 +1489,7 @@ const PILL = {
       row.appendChild(miniatura(it, it.platform !== 'instagram' && it.platform !== 'tiktok'));
       const body = el('div', 'link-body');
       const byline = el('div', 'byline');
-      byline.appendChild(avatar(it.submitter_login));
+      byline.appendChild(avatar(it.submitter_login, null, it.submitter_pic));
       byline.appendChild(el('b', null, it.submitter_login));
       byline.appendChild(el('span', null, ' · ' + hace(it.created_at)));
       body.appendChild(byline);

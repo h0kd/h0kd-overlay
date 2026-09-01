@@ -247,6 +247,10 @@ app.get('/api/me', async (c) => {
   const channel = await resolveChannel(c.env, chParam);
   if (!channel) return c.json({ error: 'Ese canal no está dado de alta.' }, 404);
 
+  // Cada visita refresca la foto de quien mira: así las listas tienen cara sin
+  // que nadie tenga que preguntarle nada a Helix.
+  if (session) await q.rememberPic(c.env.DB, session.login, session.pic);
+
   const settings = await q.getSettings(c.env.DB, channel.channel_id);
   return c.json({
     login: session?.login ?? null,
@@ -331,11 +335,14 @@ app.get('/api/mine', async (c) => {
     .all<{ id: string }>();
   const posicion = new Map((enJuego.results ?? []).map((r, i) => [r.id, i + 1]));
 
+  const fotos = await q.picsFor(c.env.DB, (res.results ?? []).map((r) => r.decided_by));
+
   return c.json({
     items: (res.results ?? []).map((r) => ({
       ...r,
       status_label: STATUS_LABEL[r.status] ?? r.status,
       position: posicion.get(r.id) ?? null,
+      decided_pic: fotos.get((r.decided_by ?? '').toLowerCase()) ?? null,
     })),
   });
 });
@@ -357,6 +364,7 @@ app.post('/api/decide', async (c) => {
   // donde entra al sistema. Vacío vale: dar el motivo es opcional.
   const motivo = typeof body.reason === 'string' ? body.reason.trim().slice(0, 300) : '';
 
+  await q.rememberPic(c.env.DB, session!.login, session!.pic);
   await notifyHub(c.env, channel, '/internal/decision', {
     item_id: body.item_id,
     approved: body.approved === true,
@@ -425,7 +433,19 @@ app.get('/api/history', async (c) => {
     : [channel.channel_id, ...estados];
 
   const res = await c.env.DB.prepare(sql).bind(...args).all<HistoryRow>();
-  return c.json({ items: res.results ?? [] });
+  const filas = res.results ?? [];
+  const fotos = await q.picsFor(
+    c.env.DB,
+    filas.flatMap((r) => [r.submitter_login, r.decided_by]),
+  );
+
+  return c.json({
+    items: filas.map((r) => ({
+      ...r,
+      submitter_pic: fotos.get(r.submitter_login.toLowerCase()) ?? null,
+      decided_pic: fotos.get((r.decided_by ?? '').toLowerCase()) ?? null,
+    })),
+  });
 });
 
 // ── API de admin (solo el broadcaster, sobre su propio canal) ────────────────
@@ -509,6 +529,7 @@ app.get('/api/admin/overview', async (c) => {
   });
 
   const fotos = await tw.getUserPics(c.env, rows.map((r) => r.user_login), token);
+  await q.rememberPics(c.env.DB, fotos);
 
   const conDatos = rows.map((r) => {
     const login = r.user_login.toLowerCase();

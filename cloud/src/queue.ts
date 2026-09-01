@@ -332,6 +332,48 @@ export async function clearQueue(db: D1Database, channelId: string): Promise<num
 
 // ── Mods autorizados ─────────────────────────────────────────────────────────
 
+// ── Fotos de perfil ──────────────────────────────────────────────────────────
+
+/** Guarda (o refresca) la foto de alguien. Sin foto no hace nada. */
+export async function rememberPic(db: D1Database, login: string, pic?: string | null) {
+  if (!login || !pic) return;
+  await db
+    .prepare(
+      `INSERT INTO user_pics (login, pic, updated_at) VALUES (?, ?, ?)
+       ON CONFLICT(login) DO UPDATE SET pic = excluded.pic, updated_at = excluded.updated_at`,
+    )
+    .bind(login.toLowerCase(), pic, Date.now())
+    .run();
+}
+
+/** Lo mismo para una tanda; se usa cuando ya se le preguntó a Helix. */
+export async function rememberPics(db: D1Database, pics: Map<string, string>) {
+  const ahora = Date.now();
+  const stmts = [...pics.entries()]
+    .filter(([login, pic]) => login && pic)
+    .map(([login, pic]) =>
+      db
+        .prepare(
+          `INSERT INTO user_pics (login, pic, updated_at) VALUES (?, ?, ?)
+           ON CONFLICT(login) DO UPDATE SET pic = excluded.pic, updated_at = excluded.updated_at`,
+        )
+        .bind(login.toLowerCase(), pic, ahora),
+    );
+  if (stmts.length) await db.batch(stmts);
+}
+
+/** Las fotos que haya de esos logins. Lo que falte, falta: se cae a iniciales. */
+export async function picsFor(db: D1Database, logins: (string | null)[]) {
+  const unicos = [...new Set(logins.map((l) => (l ?? '').toLowerCase()).filter(Boolean))];
+  if (!unicos.length) return new Map<string, string>();
+  const marcas = unicos.map(() => '?').join(',');
+  const res = await db
+    .prepare(`SELECT login, pic FROM user_pics WHERE login IN (${marcas})`)
+    .bind(...unicos)
+    .all<{ login: string; pic: string }>();
+  return new Map((res.results ?? []).map((r) => [r.login, r.pic]));
+}
+
 export async function listAuthorizedMods(db: D1Database, channelId: string) {
   const res = await db
     .prepare('SELECT twitch_user_id, twitch_login FROM authorized_mods WHERE channel_id = ?')

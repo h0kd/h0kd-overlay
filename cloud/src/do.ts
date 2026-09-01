@@ -463,6 +463,10 @@ export class ChannelHub implements DurableObject {
       'playing',
       'failed',
     ]);
+    const fotos = await q.picsFor(
+      this.env.DB,
+      rows.flatMap((r) => [r.submitter_login, r.decided_by]),
+    );
     const items = rows.map((r) => ({
       id: r.id,
       status: r.status,
@@ -472,9 +476,11 @@ export class ChannelHub implements DurableObject {
       source_url: r.source_url,
       platform: r.platform,
       submitter_login: r.submitter_login,
+      submitter_pic: fotos.get(r.submitter_login.toLowerCase()) ?? null,
       error: r.error,
       created_at: r.created_at,
       decided_by: r.decided_by,
+      decided_pic: fotos.get((r.decided_by ?? '').toLowerCase()) ?? null,
     }));
     return { items, waiting: waiting.length };
   }

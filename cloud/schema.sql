@@ -53,6 +53,18 @@ CREATE TABLE IF NOT EXISTS queue_items (
 CREATE INDEX IF NOT EXISTS idx_queue_channel_status ON queue_items(channel_id, status);
 CREATE INDEX IF NOT EXISTS idx_queue_submitter      ON queue_items(channel_id, submitter_twitch_id, created_at);
 
+-- Fotos de perfil de Twitch, guardadas por login.
+--
+-- No es una tabla de usuarios: es solo para no tener que preguntarle una foto a
+-- Helix cada vez que se pinta una lista. Se refresca sola cada vez que alguien
+-- abre una página, manda un link o decide algo, así que el que participa tiene
+-- su foto al día y el que no, no le importa a nadie.
+CREATE TABLE IF NOT EXISTS user_pics (
+  login      TEXT PRIMARY KEY,   -- siempre en minúsculas
+  pic        TEXT NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
 -- User token del broadcaster, para llamadas a Helix (Get Moderators).
 -- access_token y refresh_token se guardan CIFRADOS con TOKEN_ENC_KEY: si
 -- alguien lee la base, no se lleva sesiones de Twitch utilizables.
