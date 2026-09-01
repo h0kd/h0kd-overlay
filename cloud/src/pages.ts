@@ -476,6 +476,9 @@ const CSS = `
   }
   .mod-row:first-child { border-top: none; }
   .mod-row .name { flex: 1; }
+  .share-row { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+  .share-row label { color: var(--muted); font-size: 12.5px; min-width: 56px; }
+  .share-row input { flex: 1; min-width: 0; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; }
   .code-big {
     font-family: "Spline Sans Mono", ui-monospace, monospace;
     font-size: 30px; letter-spacing: .2em; font-weight: 500; text-align: center;
@@ -1301,6 +1304,20 @@ export function adminPage(): string {
 
        <div id="tab-settings" class="tab-panel" hidden>
          <div class="card">
+           <strong>Links para compartir</strong>
+           <p class="hint" style="margin:6px 0 12px">El de viewers va en el chat, en un comando o en el panel del canal. El de mods es solo para los que marcaste con acceso.</p>
+           <div class="share-row">
+             <label>Viewers</label>
+             <input type="text" id="shareSubmit" readonly>
+             <button class="btn sm" data-copy="shareSubmit">Copiar</button>
+           </div>
+           <div class="share-row">
+             <label>Mods</label>
+             <input type="text" id="shareMod" readonly>
+             <button class="btn sm" data-copy="shareMod">Copiar</button>
+           </div>
+         </div>
+         <div class="card">
            <strong>Emparejar la app</strong>
            <p class="hint" style="margin:6px 0 12px">Generá un código y pegalo en la app de escritorio, en Video Requests.</p>
            <div class="row"><button class="btn primary" id="pairBtn">Generar código</button></div>
@@ -1364,6 +1381,18 @@ const PILL = {
   // usuario. Acá el canal es, por definición, el del broadcaster que entró.
   const canal = ch || me.login;
   $('#chLine').textContent = 'Todo lo que pasa por la cola de ' + canal + ': estado general, historial, moderadores y actividad por viewer.';
+
+  // ── Links para compartir ──
+  $('#shareSubmit').value = location.origin + '/submit?ch=' + encodeURIComponent(canal);
+  $('#shareMod').value = location.origin + '/mod?ch=' + encodeURIComponent(canal);
+  for (const b of document.querySelectorAll('[data-copy]')) {
+    b.onclick = async () => {
+      const inp = $('#' + b.dataset.copy);
+      try { await navigator.clipboard.writeText(inp.value); }
+      catch (_) { inp.select(); document.execCommand('copy'); }
+      toast('Link copiado.');
+    };
+  }
 
   // ── Pestañas ──
   const tabs = document.querySelectorAll('.tab');
