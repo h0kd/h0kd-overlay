@@ -792,6 +792,11 @@ const VISTA = {
 };
 
 (async function () {
+  if (!ch) {
+    $('#chLine').textContent = 'A este link le falta el canal. Pedile al streamer el link completo: '
+      + location.origin + '/submit?ch=<canal>';
+    return;
+  }
   let me;
   try { me = await api('/api/me?ch=' + encodeURIComponent(ch)); }
   catch (e) { $('#chLine').textContent = e.message; return; }
@@ -1006,6 +1011,11 @@ const PILL = {
 };
 
 (async function () {
+  if (!ch) {
+    $('#chLine').textContent = 'A este link le falta el canal. El link de moderación es '
+      + location.origin + '/mod?ch=<canal>';
+    return;
+  }
   let me;
   try { me = await api('/api/me?ch=' + encodeURIComponent(ch)); }
   catch (e) { $('#chLine').textContent = e.message; return; }

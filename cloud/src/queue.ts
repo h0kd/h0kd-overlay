@@ -70,6 +70,19 @@ export async function channelByLogin(db: D1Database, login: string) {
     .first<{ channel_id: string; twitch_login: string }>();
 }
 
+/**
+ * El login del único canal dado de alta, o null si hay cero o varios. Sirve
+ * para que `/submit` y `/mod` sin `?ch=` vayan solos al canal correcto
+ * mientras el servicio tenga un solo streamer.
+ */
+export async function soleChannelLogin(db: D1Database): Promise<string | null> {
+  const rows = await db
+    .prepare('SELECT twitch_login FROM channels LIMIT 2')
+    .all<{ twitch_login: string }>();
+  const list = rows.results ?? [];
+  return list.length === 1 ? (list[0]?.twitch_login ?? null) : null;
+}
+
 export async function channelById(db: D1Database, channelId: string) {
   return db
     .prepare('SELECT channel_id, twitch_login FROM channels WHERE channel_id = ?')

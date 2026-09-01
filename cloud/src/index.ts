@@ -130,8 +130,19 @@ function channelAllowed(env: Env, login: string): boolean {
 // ── Páginas ──────────────────────────────────────────────────────────────────
 
 app.get('/', (c) => c.redirect('/admin'));
-app.get('/submit', (c) => c.html(submitPage()));
-app.get('/mod', (c) => c.html(modPage()));
+// /submit y /mod son por canal (`?ch=login`). Si el link llega sin canal y
+// hay uno solo dado de alta, se redirige ahí: el streamer comparte
+// videos.h0kd.dev/submit a secas y funciona. Con varios canales no hay forma
+// de adivinar y la página lo dice.
+async function withChannel(c: Context<{ Bindings: Env }>, page: () => string) {
+  if (!c.req.query('ch')) {
+    const sole = await q.soleChannelLogin(c.env.DB);
+    if (sole) return c.redirect(`${c.req.path}?ch=${encodeURIComponent(sole)}`);
+  }
+  return c.html(page());
+}
+app.get('/submit', (c) => withChannel(c, submitPage));
+app.get('/mod', (c) => withChannel(c, modPage));
 app.get('/admin', (c) => c.html(adminPage()));
 
 // ── Diagnóstico ──────────────────────────────────────────────────────────────
