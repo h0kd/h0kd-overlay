@@ -23,6 +23,10 @@ export interface Session {
   uid: string;
   login: string;
   name: string;
+  /** Foto de perfil de Twitch. Se guarda en la cookie y no se vuelve a pedir:
+   *  es una URL pública de un CDN, no un dato sensible, y evitarle una llamada
+   *  a Helix a cada carga de página vale más que tenerla siempre al día. */
+  pic?: string;
   /** epoch segundos */
   exp: number;
 }
@@ -42,12 +46,13 @@ const nowSec = () => Math.floor(Date.now() / 1000);
 
 export async function setSession(
   c: Context<{ Bindings: Env }>,
-  user: { id: string; login: string; display_name: string },
+  user: { id: string; login: string; display_name: string; profile_image_url?: string },
 ): Promise<void> {
   const session: Session = {
     uid: user.id,
     login: user.login,
     name: user.display_name || user.login,
+    pic: user.profile_image_url || undefined,
     exp: nowSec() + SESSION_TTL_SECONDS,
   };
   const token = await signPayload(c.env.SESSION_SECRET, session);

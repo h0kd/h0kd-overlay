@@ -114,6 +114,10 @@ const CSS = `
     border-bottom: 1px solid var(--border-soft);
   }
   .logo { display: flex; align-items: center; gap: 10px; }
+  /* El diseño tenía el conmutador de roles en el medio empujando el chip a la
+     derecha. Sin él, el chip quedaba pegado al logo. */
+  .user-chip { margin-left: auto; }
+  .avatar img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; display: block; }
   .logo-mark {
     width: 34px; height: 34px; border-radius: 9px;
     background: linear-gradient(135deg, var(--accent-strong), var(--accent));
@@ -603,6 +607,17 @@ function fillChip(me) {
   const av = $('#chipAvatar');
   av.textContent = iniciales(me.login);
   av.className = 'avatar ' + colorAvatar(me.login);
+  // La foto de Twitch si la hay; las iniciales quedan de red si el CDN falla o
+  // si la sesión es vieja y todavía no la tiene guardada.
+  if (me.pic) {
+    const img = document.createElement('img');
+    img.src = me.pic;
+    img.alt = '';
+    img.referrerPolicy = 'no-referrer';
+    img.onerror = function () { img.remove(); av.textContent = iniciales(me.login); };
+    av.textContent = '';
+    av.appendChild(img);
+  }
   $('#chipName').textContent = me.login;
   $('#userChip').hidden = false;
   $('#logoutBtn').onclick = async function () {

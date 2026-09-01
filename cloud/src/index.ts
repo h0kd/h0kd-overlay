@@ -242,7 +242,7 @@ app.get('/api/me', async (c) => {
   const session = await getSession(c);
   const chParam = c.req.query('ch');
   if (!chParam) {
-    return c.json({ login: session?.login ?? null, name: session?.name ?? null });
+    return c.json({ login: session?.login ?? null, name: session?.name ?? null, pic: session?.pic ?? null });
   }
   const channel = await resolveChannel(c.env, chParam);
   if (!channel) return c.json({ error: 'Ese canal no está dado de alta.' }, 404);
@@ -250,6 +250,7 @@ app.get('/api/me', async (c) => {
   const settings = await q.getSettings(c.env.DB, channel.channel_id);
   return c.json({
     login: session?.login ?? null,
+    pic: session?.pic ?? null,
     role: await roleFor(c.env, session, channel.channel_id),
     channel_login: channel.twitch_login,
     submissions_open: settings.submissions_open,
