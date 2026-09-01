@@ -51,28 +51,27 @@
     @keyframes outSlideRight { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateX(50px); } }
 
     /* ── Video Requests ──────────────────────────────────────────────────────
-       Contenedor propio, centrado y aparte del spawn aleatorio de los canjes.
-       `object-fit: contain` es lo que deja convivir Reels verticales 9:16 con
-       clips horizontales 16:9 sin deformar ninguno: el video se acomoda dentro
-       de la caja y sobra espacio por donde tenga que sobrar. */
+       Contenedor propio, aparte del spawn de los canjes. El video se ubica y
+       dimensiona por JS (ver placeRequest) recién cuando se conoce su
+       proporción real: así conviven Reels verticales 9:16 con clips 16:9 sin
+       deformar ninguno, y la posición (fija o al azar) se calcula con el
+       tamaño que de verdad va a ocupar. */
     #vrStage {
       position: absolute;
       inset: 0;
       display: none;
-      align-items: center;
-      justify-content: center;
       pointer-events: none;
     }
-    #vrStage.on { display: flex; }
+    #vrStage.on { display: block; }
     #vrStage video {
-      max-width: 62%;
-      max-height: 80%;
+      position: absolute;
       object-fit: contain;
       border-radius: 10px;
       box-shadow: 0 10px 40px rgba(0, 0, 0, .55);
-      animation: inPop 0.28s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+      /* Invisible hasta que placeRequest lo ubica: si no, un frame en (0,0). */
+      visibility: hidden;
     }
-    #vrStage.leaving video { animation: outPop 0.25s ease-in forwards; }
+    #vrStage video.placed { visibility: visible; }
 
     /* ── Setup status badge ──────────────────────────────────────────────────
        Visible ONLY while configuring (page load → first successful connection).
@@ -166,10 +165,58 @@
       try { ws.send(JSON.stringify(obj)); } catch (_) {}
     }
 
+    // Dónde y de qué tamaño salen los pedidos. Vive en config.json bajo
+    // `videoRequests` (se edita en la pestaña Video Requests del panel) y sin
+    // nada configurado da lo de siempre: centrado, al 62% de la pantalla.
+    function vrLayout() {
+      const c = config.videoRequests || {};
+      const cW = config.canvas.width;
+      const cH = config.canvas.height;
+      const pct = (typeof c.sizePct === 'number') ? Math.max(5, Math.min(100, c.sizePct)) : 62;
+      return {
+        random: c.position === 'random',
+        cx: (typeof c.x === 'number') ? c.x : cW / 2,
+        cy: (typeof c.y === 'number') ? c.y : cH / 2,
+        pct: pct,
+        respectZones: c.respectSafeZones !== false,
+        animIn: c.animIn || 'pop',
+        animOut: c.animOut || 'pop'
+      };
+    }
+
+    // Ubica y dimensiona el video una vez conocida su proporción real.
+    // 100% = el video llena la pantalla sin recortarse, la misma regla que el
+    // tamaño de los canjes, así el mismo % se ve igual en vertical y horizontal.
+    function placeRequest(video, vw, vh) {
+      const L = vrLayout();
+      const cW = config.canvas.width;
+      const cH = config.canvas.height;
+      const fs = Math.min(cW / vw, cH / vh) * L.pct / 100;
+      const fw = Math.max(1, Math.round(vw * fs));
+      const fh = Math.max(1, Math.round(vh * fs));
+      let x, y;
+      if (L.random) {
+        const p = randomPosition(fw, fh, L.respectZones);
+        x = p.x; y = p.y;
+      } else {
+        // La posición fija es el CENTRO del video: así la misma elección
+        // sirve para un Reel y para un clip aunque ocupen cajas distintas.
+        x = Math.round(L.cx - fw / 2);
+        y = Math.round(L.cy - fh / 2);
+      }
+      x = Math.max(0, Math.min(x, cW - fw));
+      y = Math.max(0, Math.min(y, cH - fh));
+      Object.assign(video.style, {
+        left: x + 'px', top: y + 'px', width: fw + 'px', height: fh + 'px'
+      });
+      if (L.animIn !== 'none' && IN_ANIMS[L.animIn]) video.style.animation = IN_ANIMS[L.animIn];
+      video.classList.add('placed');
+      log(`  → pos=(${x},${y}) ${fw}×${fh} ${L.random ? 'al azar' : 'fija'} ${L.pct}%`);
+    }
+
     function playRequest(data) {
       const stage = document.getElementById('vrStage');
       stage.textContent = '';
-      stage.classList.remove('leaving');
       stage.classList.add('on');
 
       const video = document.createElement('video');
@@ -186,11 +233,17 @@
         if (done) return;
         done = true;
         clearTimeout(guard);
-        stage.classList.add('leaving');
+        const L = vrLayout();
+        const out = OUT_ANIMS[L.animOut];
+        const animated = L.animOut !== 'none' && !!out && video.classList.contains('placed');
+        if (animated) video.style.animation = out;
         setTimeout(function () {
-          stage.classList.remove('on', 'leaving');
-          stage.textContent = '';
-        }, 300);
+          // Solo si nadie puso otro pedido en el medio.
+          if (video.parentNode === stage) {
+            stage.classList.remove('on');
+            stage.textContent = '';
+          }
+        }, animated ? REMOVE_ANIM_BUDGET : 0);
         const seconds = (Date.now() - started) / 1000;
         vrPlaying = null;
         wsSend({ type: 'requestEnded', itemId: data.itemId, seconds: seconds, reason: reason });
@@ -218,6 +271,7 @@
       video.addEventListener('loadedmetadata', function () {
         const d = isFinite(video.duration) && video.duration > 0 ? video.duration : 0;
         armGuard(Math.round((d + 15) * 1000));
+        placeRequest(video, video.videoWidth || 16, video.videoHeight || 9);
       });
 
       video.addEventListener('ended', function () { finish('ended'); });
@@ -249,7 +303,8 @@
     let config = {
       rewards:   {},
       safeZones: { exclude: [] },
-      canvas:    { width: 1920, height: 1080 }
+      canvas:    { width: 1920, height: 1080 },
+      videoRequests: {}
     };
     let ws = null;
     let wsReconnectTimer = null;
@@ -292,7 +347,8 @@
         config = {
           rewards:   raw.rewards   || {},
           safeZones: raw.safeZones || { exclude: [] },
-          canvas:    raw.canvas    || { width: 1920, height: 1080 }
+          canvas:    raw.canvas    || { width: 1920, height: 1080 },
+          videoRequests: raw.videoRequests || {}
         };
         const w = config.canvas.width;
         const h = config.canvas.height;

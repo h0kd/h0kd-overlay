@@ -268,6 +268,36 @@
   .vr-note { font-size: 11px; color: var(--muted); line-height: 1.45; margin-top: 6px; }
   .vr-note.warn { color: #f0a000; }
   .vr-note.on   { color: var(--green); }
+  /* Posición y tamaño en pantalla: un lienzo a escala con las safe zones y
+     una caja arrastrable que representa el video. */
+  .vr-stage {
+    position: relative; width: 100%; max-width: 480px; aspect-ratio: 16 / 9;
+    background: var(--s2); border: 1px solid var(--border); border-radius: 6px;
+    overflow: hidden; margin-top: 12px; user-select: none;
+  }
+  .vr-stage .zone {
+    position: absolute; background: rgba(255,80,80,.16);
+    outline: 1px dashed rgba(255,80,80,.6); pointer-events: none;
+  }
+  .vr-stage .box {
+    position: absolute; background: rgba(145,71,255,.28); outline: 2px solid var(--accent);
+    border-radius: 3px; display: grid; place-items: center;
+    font-size: 11px; color: var(--text); cursor: grab; touch-action: none;
+  }
+  .vr-stage .box:active { cursor: grabbing; }
+  .vr-stage .box.locked { cursor: default; outline-style: dashed; opacity: .75; }
+  .vr-seg { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+  .vr-seg button {
+    background: var(--s2); color: var(--muted); border: none; padding: 5px 10px;
+    font: inherit; font-size: 12px; cursor: pointer;
+  }
+  .vr-seg button.active { background: var(--accent); color: #fff; }
+  .vr-label { min-width: 84px; color: var(--muted); font-size: 12.5px; }
+  .vr-card select {
+    background: var(--s2); border: 1px solid var(--border); color: var(--text);
+    border-radius: 6px; padding: 7px 9px; font: inherit; font-size: 12.5px;
+  }
+  .vr-card input[type=range] { flex: 1; }
 
   /* ── Editor panel ── */
   #editor {
@@ -884,6 +914,7 @@
         <button class="vr-btn" id="vrPairBtn">Emparejar</button>
       </div>
       <div class="vr-row" id="vrUnpairRow" style="display:none">
+        <button class="vr-btn" id="vrReconnectBtn" style="display:none">Reconectar</button>
         <button class="vr-btn secondary" id="vrUnpairBtn">Desemparejar</button>
       </div>
       <div class="vr-err" id="vrError" style="display:none"></div>
@@ -903,6 +934,47 @@
       <p class="vr-foot">
         Instagram necesita las cookies de una cuenta <b>dedicada</b> (nunca la personal),
         exportadas en formato Netscape como <code>instagram-cookies.txt</code>.
+      </p>
+    </div>
+
+    <div class="vr-card" id="vrLayoutCard">
+      <h3>En pantalla</h3>
+      <p class="vr-lead" style="margin-top:0">
+        Dónde y de qué tamaño salen los videos pedidos. Es aparte de los canjes, que
+        tienen su propia configuración por reward.
+      </p>
+      <div class="vr-row">
+        <span class="vr-label">Posición</span>
+        <select id="vrlMode">
+          <option value="fixed">Fija (la elegís abajo)</option>
+          <option value="random">Al azar, como los canjes</option>
+        </select>
+        <span style="flex:1"></span>
+        <span class="vr-seg" id="vrlOri" title="Proporción del video de ejemplo, solo para el preview">
+          <button type="button" data-ori="h" class="active">16:9</button>
+          <button type="button" data-ori="v">9:16</button>
+        </span>
+      </div>
+      <div class="vr-stage" id="vrlStage"><div class="box" id="vrlBox"></div></div>
+      <div class="size-readout" id="vrlReadout"></div>
+      <div class="vr-row">
+        <span class="vr-label">Tamaño</span>
+        <input type="range" id="vrlSize" min="5" max="100" step="1" />
+        <span class="vol-value" id="vrlSizePct">62%</span>
+      </div>
+      <div class="vr-row">
+        <span class="vr-label">Entrada</span>
+        <select id="vrlAnimIn"></select>
+        <span class="vr-label" style="min-width:0;margin-left:8px">Salida</span>
+        <select id="vrlAnimOut"></select>
+      </div>
+      <label class="vr-toggle" style="margin-top:12px">
+        <input type="checkbox" id="vrlZones" />
+        <span>Al azar: respetar safe zones (no aparecer sobre la webcam u otras zonas)</span>
+      </label>
+      <p class="vr-foot">
+        100% = el video llena la pantalla sin deformarse; un Reel vertical y un clip
+        horizontal al mismo % se ven del mismo tamaño. Se aplica al guardar.
       </p>
     </div>
   </section>
@@ -1055,6 +1127,9 @@
     });
     document.getElementById('vrUnpairBtn').addEventListener('click', function() {
       invoke('vr_unpair').catch(function(e) { vrShowError(e); });
+    });
+    document.getElementById('vrReconnectBtn').addEventListener('click', function() {
+      invoke('vr_reconnect').catch(function(e) { vrShowError(e); });
     });
     document.getElementById('vrInstallBtn').addEventListener('click', function() {
       vrStartJob(this, 'vr_install_binaries');
@@ -1537,6 +1612,146 @@
     if (onb) onb.textContent = overlayUrl();
   }
 
+  // ── Video Requests: posición y tamaño en pantalla ─────────────────────────
+  // Vive en cfg.videoRequests (config.json) y lo lee el overlay en
+  // playRequest. Las claves de animación son las mismas que en los canjes.
+
+  var vrlOri   = 'h';     // proporción del video de ejemplo, solo para el preview
+  var vrlWired = false;
+
+  function vrlRead() {
+    var v  = cfg.videoRequests || {};
+    var cw = (cfg.canvas && cfg.canvas.width)  || 1920;
+    var ch = (cfg.canvas && cfg.canvas.height) || 1080;
+    return {
+      random:  v.position === 'random',
+      sizePct: (typeof v.sizePct === 'number') ? Math.max(5, Math.min(100, Math.round(v.sizePct))) : 62,
+      x:       (typeof v.x === 'number') ? v.x : cw / 2,
+      y:       (typeof v.y === 'number') ? v.y : ch / 2,
+      zones:   v.respectSafeZones !== false,
+      animIn:  v.animIn  || 'pop',
+      animOut: v.animOut || 'pop',
+      cw: cw, ch: ch
+    };
+  }
+
+  function vrlWrite(patch) {
+    cfg.videoRequests = cfg.videoRequests || {};
+    Object.keys(patch).forEach(function(k) { cfg.videoRequests[k] = patch[k]; });
+    markDirty();
+    renderVrLayout();
+  }
+
+  function renderVrLayout() {
+    var L     = vrlRead();
+    var stage = document.getElementById('vrlStage');
+    var box   = document.getElementById('vrlBox');
+    if (!stage || !box) return;
+    stage.style.aspectRatio = L.cw + ' / ' + L.ch;
+    var k = (stage.clientWidth || 480) / L.cw;   // px del preview por px del canvas
+
+    // Las safe zones se dibujan para poder elegir un lugar que no las pise.
+    Array.prototype.forEach.call(stage.querySelectorAll('.zone'), function(z) { z.remove(); });
+    ((cfg.safeZones && cfg.safeZones.exclude) || []).forEach(function(z) {
+      var d = document.createElement('div');
+      d.className = 'zone';
+      d.style.left   = (z.x * k) + 'px';
+      d.style.top    = (z.y * k) + 'px';
+      d.style.width  = (z.width * k) + 'px';
+      d.style.height = (z.height * k) + 'px';
+      d.title = z.name || 'safe zone';
+      stage.insertBefore(d, box);
+    });
+
+    // Video de ejemplo al % elegido. 100% = llena la pantalla sin recortarse,
+    // la misma regla que usa el overlay.
+    var vw = vrlOri === 'v' ? 9 : 16, vh = vrlOri === 'v' ? 16 : 9;
+    var fs = Math.min(L.cw / vw, L.ch / vh) * L.sizePct / 100;
+    var fw = Math.round(vw * fs), fh = Math.round(vh * fs);
+    var x  = L.random ? (L.cw - fw) / 2 : L.x - fw / 2;
+    var y  = L.random ? (L.ch - fh) / 2 : L.y - fh / 2;
+    x = Math.max(0, Math.min(x, L.cw - fw));
+    y = Math.max(0, Math.min(y, L.ch - fh));
+    box.style.left   = (x * k) + 'px';
+    box.style.top    = (y * k) + 'px';
+    box.style.width  = (fw * k) + 'px';
+    box.style.height = (fh * k) + 'px';
+    box.classList.toggle('locked', L.random);
+    box.textContent = L.random ? 'al azar' : 'arrastrá';
+
+    document.getElementById('vrlReadout').textContent =
+      fw + '×' + fh + ' px  ·  ' + L.sizePct + '% de la pantalla  ·  '
+      + (L.random ? 'posición al azar' : 'centro en (' + Math.round(L.x) + ', ' + Math.round(L.y) + ')');
+
+    document.getElementById('vrlMode').value = L.random ? 'random' : 'fixed';
+    var s = document.getElementById('vrlSize');
+    if (s.value != L.sizePct) s.value = L.sizePct;
+    document.getElementById('vrlSizePct').textContent = L.sizePct + '%';
+    document.getElementById('vrlZones').checked = L.zones;
+    document.getElementById('vrlAnimIn').innerHTML  = animOptionsHtml(ANIM_IN_OPTS,  L.animIn);
+    document.getElementById('vrlAnimOut').innerHTML = animOptionsHtml(ANIM_OUT_OPTS, L.animOut);
+    Array.prototype.forEach.call(document.querySelectorAll('#vrlOri button'), function(b) {
+      b.classList.toggle('active', b.getAttribute('data-ori') === vrlOri);
+    });
+
+    if (!vrlWired) { vrlWired = true; wireVrLayout(); }
+  }
+
+  function wireVrLayout() {
+    var stage = document.getElementById('vrlStage');
+    var box   = document.getElementById('vrlBox');
+    document.getElementById('vrlMode').addEventListener('change', function() {
+      vrlWrite({ position: this.value === 'random' ? 'random' : 'fixed' });
+    });
+    document.getElementById('vrlSize').addEventListener('input', function() {
+      vrlWrite({ sizePct: Math.max(5, Math.min(100, parseInt(this.value) || 5)) });
+    });
+    document.getElementById('vrlZones').addEventListener('change', function() {
+      vrlWrite({ respectSafeZones: this.checked });
+    });
+    document.getElementById('vrlAnimIn').addEventListener('change', function() {
+      vrlWrite({ animIn: this.value });
+    });
+    document.getElementById('vrlAnimOut').addEventListener('change', function() {
+      vrlWrite({ animOut: this.value });
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('#vrlOri button'), function(b) {
+      b.addEventListener('click', function() {
+        vrlOri = b.getAttribute('data-ori');
+        renderVrLayout();
+      });
+    });
+    window.addEventListener('resize', function() { if (view === 'vr') renderVrLayout(); });
+
+    // Arrastre: lo que se mueve es el CENTRO del video, en px del canvas, y
+    // por eso la misma posición sirve para un Reel y para un clip.
+    box.addEventListener('pointerdown', function(e) {
+      var L = vrlRead();
+      if (L.random) return;
+      e.preventDefault();
+      box.setPointerCapture(e.pointerId);
+      var k = (stage.clientWidth || 480) / L.cw;
+      var startX = e.clientX, startY = e.clientY, ox = L.x, oy = L.y;
+      cfg.videoRequests = cfg.videoRequests || {};
+      function move(ev) {
+        var nx = ox + (ev.clientX - startX) / k;
+        var ny = oy + (ev.clientY - startY) / k;
+        cfg.videoRequests.x = Math.round(Math.max(0, Math.min(nx, L.cw)));
+        cfg.videoRequests.y = Math.round(Math.max(0, Math.min(ny, L.ch)));
+        renderVrLayout();
+      }
+      function up() {
+        box.removeEventListener('pointermove', move);
+        box.removeEventListener('pointerup', up);
+        box.removeEventListener('pointercancel', up);
+        markDirty();
+      }
+      box.addEventListener('pointermove', move);
+      box.addEventListener('pointerup', up);
+      box.addEventListener('pointercancel', up);
+    });
+  }
+
   // ── Video Requests: estado del módulo ─────────────────────────────────────
 
   function vrShowError(msg) {
@@ -1615,6 +1830,9 @@
     var paired = st.state !== 'unpaired';
     document.getElementById('vrPairRow').style.display = paired ? 'none' : '';
     document.getElementById('vrUnpairRow').style.display = paired ? '' : 'none';
+    // Solo tras un corte terminal (4409, token revocado…): mientras conecta o
+    // ya conectado, el botón no tiene sentido.
+    document.getElementById('vrReconnectBtn').style.display = st.state === 'error' ? '' : 'none';
     document.getElementById('vrPairHelp').style.display = paired ? 'none' : '';
 
     document.getElementById('vrYtdlp').textContent = st.ytdlpVersion || 'no encontrado';
@@ -1644,11 +1862,15 @@
     Array.prototype.forEach.call(document.querySelectorAll('.view-tab'), function(tab) {
       tab.classList.toggle('active', tab.getAttribute('data-view') === v);
     });
+    // El preview de posición se mide con el ancho real del lienzo, que es 0
+    // mientras la vista está oculta: se redibuja recién al mostrarla.
+    if (!isOverlay) renderVrLayout();
   }
 
   // The flag is read once at startup, so turning it on/off only takes
   // effect after a restart. Saying so beats a toggle that silently lies.
   function renderVideoRequests() {
+    renderVrLayout();
     var want = !!(cfg.videoRequests && cfg.videoRequests.enabled);
     document.getElementById('vrEnabled').checked = want;
     var note  = document.getElementById('vrNote');

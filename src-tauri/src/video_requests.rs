@@ -97,6 +97,9 @@ pub enum VrCmd {
     Overlay(OverlayEvent),
     InstallBinaries,
     UpdateYtdlp,
+    /// Volver a conectar después de un cierre terminal (p. ej. 4409, otra
+    /// instancia tomó el canal y ya se cerró). Sin esto había que reiniciar.
+    Reconnect,
 }
 
 #[derive(Debug, Clone)]
@@ -391,6 +394,10 @@ async fn handle_offline_cmd(
         }
         VrCmd::InstallBinaries => spawn_binaries_job(data_dir, shared, BinariesJob::Install),
         VrCmd::UpdateYtdlp => spawn_binaries_job(data_dir, shared, BinariesJob::UpdateYtdlp),
+        // No hay nada que hacer acá: con volver al loop, si hay token, se
+        // intenta la sesión de nuevo. Se limpia el error para que la UI no
+        // muestre el motivo viejo mientras conecta.
+        VrCmd::Reconnect => update(shared, |s| s.error = None),
         VrCmd::Overlay(_) => {}
     }
 }
@@ -609,6 +616,8 @@ async fn session(
                 Some(VrCmd::UpdateYtdlp) => {
                     spawn_binaries_job(data_dir, shared, BinariesJob::UpdateYtdlp);
                 }
+                // Con la sesión abierta, reconectar es cortar y volver a entrar.
+                Some(VrCmd::Reconnect) => return SessionEnd::Retry("Reconectando.".into()),
                 None => return SessionEnd::Terminal("La app se está cerrando.".into()),
             },
 

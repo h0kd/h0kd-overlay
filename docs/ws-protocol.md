@@ -8,7 +8,10 @@ construir cualquiera de las dos. Los tipos se declaran en TypeScript porque el W
 TS; el agente los implementa con `serde` (ver §9 para el mapeo a Rust).
 
 - **Versión del protocolo:** `1`
-- **Estado del documento:** propuesta, pendiente de validación
+- **Estado del documento:** implementado de los dos lados (Worker/DO en `cloud/`,
+  agente en `src-tauri/src/video_requests.rs`) y probado en vivo con las cinco
+  plataformas. Lo único del contrato que no se ejercitó a mano es `clear` por
+  `stream_offline`, que solo dispara EventSub.
 
 ---
 

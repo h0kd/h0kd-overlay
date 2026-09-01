@@ -339,6 +339,11 @@ async fn vr_update_ytdlp(state: tauri::State<'_, AppState>) -> Result<(), String
     vr_send(&state, video_requests::VrCmd::UpdateYtdlp).await
 }
 
+#[tauri::command]
+async fn vr_reconnect(state: tauri::State<'_, AppState>) -> Result<(), String> {
+    vr_send(&state, video_requests::VrCmd::Reconnect).await
+}
+
 /// Abre la carpeta donde va el archivo de cookies de Instagram, creándola si
 /// hace falta. Explicarle a alguien cómo llegar a %APPDATA% a mano es fricción
 /// gratis.
@@ -526,6 +531,7 @@ pub fn run() {
             vr_unpair,
             vr_install_binaries,
             vr_update_ytdlp,
+            vr_reconnect,
             vr_open_cookies_dir,
             open_logs_dir,
             twitch_status,
