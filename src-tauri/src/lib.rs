@@ -1,3 +1,4 @@
+mod applog;
 mod server;
 mod twitch;
 mod video_requests;
@@ -129,7 +130,7 @@ fn find_data_dir() -> PathBuf {
         for root in &roots {
             for ancestor in root.ancestors() {
                 if ancestor.join("config.json").exists() {
-                    println!("[Data] (dev) Found config.json at: {}", ancestor.display());
+                    logln!("[Data] (dev) Found config.json at: {}", ancestor.display());
                     return ancestor.to_path_buf();
                 }
             }
@@ -141,7 +142,7 @@ fn find_data_dir() -> PathBuf {
     if let Ok(exe) = std::env::current_exe() {
         if let Some(parent) = exe.parent() {
             if parent.join("config.json").exists() {
-                println!("[Data] Portable: {}", parent.display());
+                logln!("[Data] Portable: {}", parent.display());
                 return parent.to_path_buf();
             }
         }
@@ -150,7 +151,7 @@ fn find_data_dir() -> PathBuf {
     // Default for distributed apps: per-user OS app-data dir, seeded on first run.
     let dir = os_app_data_dir();
     ensure_data_dir(&dir);
-    println!("[Data] Using app data dir: {}", dir.display());
+    logln!("[Data] Using app data dir: {}", dir.display());
     dir
 }
 
@@ -204,7 +205,7 @@ fn list_videos(state: tauri::State<AppState>) -> Vec<String> {
 fn trigger_reward(state: tauri::State<AppState>, reward: String, user: Option<String>) -> Value {
     let user = user.unwrap_or_default();
     let clients = broadcast_play_video(&state.tx, &reward, &user);
-    println!("[Trigger] playVideo → {} | clientes: {}", reward, clients);
+    logln!("[Trigger] playVideo → {} | clientes: {}", reward, clients);
     json!({ "ok": true, "clients": clients })
 }
 
@@ -342,6 +343,13 @@ async fn vr_update_ytdlp(state: tauri::State<'_, AppState>) -> Result<(), String
 /// hace falta. Explicarle a alguien cómo llegar a %APPDATA% a mano es fricción
 /// gratis.
 #[tauri::command]
+fn open_logs_dir(state: tauri::State<AppState>) -> Result<(), String> {
+    let dir = applog::dir(&state.data_dir);
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    open::that(&dir).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn vr_open_cookies_dir(state: tauri::State<AppState>) -> Result<(), String> {
     let dir = state.data_dir.join("video-requests");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
@@ -420,9 +428,13 @@ async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let data_dir = Arc::new(find_data_dir());
+    // Antes que cualquier otra cosa: si algo falla en el arranque, queremos que
+    // ese fallo tambien quede escrito.
+    applog::init(&data_dir);
+    logln!("[App] {} arranca. Log en {}", env!("CARGO_PKG_VERSION"), applog::dir(&data_dir).display());
     let video_requests_enabled = read_video_requests_flag(&data_dir);
     if video_requests_enabled {
-        println!("[VideoRequests] Flag activo.");
+        logln!("[VideoRequests] Flag activo.");
     }
     // Drop the initial receiver so the count reflects only real WS clients (overlay connections).
     // tx.send() will return SendError when no subscribers exist; trigger_reward handles that via unwrap_or(0).
@@ -481,7 +493,7 @@ pub fn run() {
                     } else {
                         format!("No se pudo iniciar el servidor local: {}", e)
                     };
-                    eprintln!("[Server] {}", msg);
+                    logln!("[Server] {}", msg);
                     if let Ok(mut h) = health.lock() {
                         *h = ServerHealth::Error { message: msg };
                     }
@@ -515,6 +527,7 @@ pub fn run() {
             vr_install_binaries,
             vr_update_ytdlp,
             vr_open_cookies_dir,
+            open_logs_dir,
             twitch_status,
             twitch_set_client_id,
             twitch_connect,

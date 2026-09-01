@@ -12,6 +12,7 @@
 //! **Con el flag apagado nada de este módulo se construye.** `lib.rs` ni
 //! siquiera lanza el worker.
 
+use crate::logln;
 use crate::AppState;
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
@@ -310,7 +311,7 @@ pub async fn worker_loop(state: AppState, mut rx: mpsc::Receiver<VrCmd>) {
 
         match session(&state, &data_dir, &shared, &pairing, &mut playback, &mut rx).await {
             SessionEnd::Terminal(msg) => {
-                println!("[VideoRequests] sesión cortada, no se reintenta: {msg}");
+                logln!("[VideoRequests] sesión cortada, no se reintenta: {msg}");
                 update(&shared, |s| {
                     s.state = "error".into();
                     s.error = Some(msg);
@@ -329,7 +330,7 @@ pub async fn worker_loop(state: AppState, mut rx: mpsc::Receiver<VrCmd>) {
                 continue;
             }
             SessionEnd::Retry(msg) => {
-                println!("[VideoRequests] reconecta en {}s: {msg}", backoff.as_secs());
+                logln!("[VideoRequests] reconecta en {}s: {msg}", backoff.as_secs());
                 update(&shared, |s| {
                     s.state = "connecting".into();
                     s.error = Some(msg);
@@ -535,7 +536,7 @@ async fn session(
         s.state = "connected".into();
         s.error = None;
     });
-    println!("[VideoRequests] Conectado al canal '{}'.", pairing.channel_login);
+    logln!("[VideoRequests] Conectado al canal '{}'.", pairing.channel_login);
 
     let media = media_dir(data_dir);
     let mut limits = ChannelLimits::default();
@@ -612,7 +613,7 @@ async fn session(
                 // a llegar. Cerrarlo acá es la única salida.
                 if state.tx.receiver_count() == 0 {
                     if let Some(item_id) = playback.now_playing.take() {
-                        println!("[VideoRequests] el overlay se fue con {item_id} en pantalla");
+                        logln!("[VideoRequests] el overlay se fue con {item_id} en pantalla");
                         let msg = envelope(
                             "playback.ended",
                             json!({ "item_id": item_id, "reason": "error", "played_seconds": 0 }),
@@ -637,7 +638,7 @@ async fn session(
                     });
                     let clients = state.tx.send(msg.to_string()).unwrap_or(0);
                     if clients > 0 {
-                        println!("[VideoRequests] → overlay {}", item.item_id);
+                        logln!("[VideoRequests] → overlay {}", item.item_id);
                     }
                     if clients == 0 {
                         // Sin overlay conectado no se puede reproducir: vuelve
@@ -768,7 +769,7 @@ async fn apply_overlay_event(
             // siempre. Un video que ni arrancó figuraba como reproducido, y el
             // mod que lo aprobó no tenía forma de enterarse.
             let reason = if reason == "ended" { "ended" } else { "error" };
-            println!("[VideoRequests] fin {item_id}: {reason} ({seconds:.1}s)");
+            logln!("[VideoRequests] fin {item_id}: {reason} ({seconds:.1}s)");
             // El archivo ya cumplió: la nube lo deja en `played` y no se vuelve a
             // encolar. Si no se borra acá, los mp4 se apilan toda la transmisión
             // —unos 5 MB cada uno— y recién se limpian en la próxima reconexión,
@@ -791,8 +792,8 @@ async fn apply_overlay_event(
 /// descarga que falló y un socket que se cayó.
 fn log_hub(kind: &str, p: &Value) {
     match p["item_id"].as_str() {
-        Some(id) if !id.is_empty() => println!("[VideoRequests] ← {kind} {id}"),
-        _ => println!("[VideoRequests] ← {kind}"),
+        Some(id) if !id.is_empty() => logln!("[VideoRequests] ← {kind} {id}"),
+        _ => logln!("[VideoRequests] ← {kind}"),
     }
 }
 
@@ -860,7 +861,7 @@ async fn handle_hub_message(
             let cfg = pipeline_config(data_dir, limits);
             let result = core::pipeline::fetch_metadata(bins, &url, &cfg).await;
             if let Err(e) = &result {
-                println!("[VideoRequests] metadata falló {item_id}: [{:?}] {}", e.code, e.message);
+                logln!("[VideoRequests] metadata falló {item_id}: [{:?}] {}", e.code, e.message);
             }
             let payload = match result {
                 Ok((_, meta)) => json!({
@@ -889,7 +890,7 @@ async fn handle_hub_message(
             let cfg = pipeline_config(data_dir, limits);
             let result = core::pipeline::prepare(bins, &url, &item_id, media, &cfg).await;
             if let Err(e) = &result {
-                println!("[VideoRequests] descarga falló {item_id}: [{:?}] {}", e.code, e.message);
+                logln!("[VideoRequests] descarga falló {item_id}: [{:?}] {}", e.code, e.message);
             }
             let payload = match result {
                 Ok(prepared) => {
@@ -900,7 +901,7 @@ async fn handle_hub_message(
                         submitter: String::new(),
                     });
                     update(shared, |s| s.queue_len = playback.queue.len());
-                    println!(
+                    logln!(
                         "[VideoRequests] listo {item_id}: {:.1}s {}x{} ({})",
                         prepared.duration_seconds,
                         prepared.width,

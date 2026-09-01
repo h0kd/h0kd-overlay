@@ -6,6 +6,7 @@
 //!   3. On each redemption → broadcast a `playVideo` message to every connected
 //!      overlay (via `broadcast_play_video`, same path as the "Probar" button).
 
+use crate::logln;
 use crate::AppState;
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
@@ -204,7 +205,7 @@ pub async fn worker_loop(state: AppState, mut rx: mpsc::Receiver<TwitchCmd>) {
                     s.avatar = None;
                     s.error = None;
                 });
-                println!("[Twitch] Desconectado.");
+                logln!("[Twitch] Desconectado.");
             }
         }
     }
@@ -273,7 +274,7 @@ async fn session(state: AppState) {
                         tokens.access_token = t.access_token;
                         tokens.refresh_token = t.refresh_token;
                         save_tokens(&data_dir, &tokens);
-                        println!("[Twitch] Token renovado.");
+                        logln!("[Twitch] Token renovado.");
                     }
                     Err(e) => {
                         update_status(&shared, |s| {
@@ -333,7 +334,7 @@ async fn device_flow(
         .await
         .map_err(|e| format!("Respuesta de device inválida: {e}"))?;
 
-    println!(
+    logln!(
         "[Twitch] Emparejá: andá a {} y poné el código {}",
         dev.verification_uri, dev.user_code
     );
@@ -590,7 +591,7 @@ async fn run_eventsub(
         s.verification_uri = None;
         s.error = None;
     });
-    println!("[Twitch] EventSub conectado como '{login}'. Escuchando canjes.");
+    logln!("[Twitch] EventSub conectado como '{login}'. Escuchando canjes.");
 
     // Read loop. Twitch sends session_keepalive within `keepalive` seconds;
     // if nothing arrives within a small grace window, treat as dead → reconnect.
@@ -641,5 +642,5 @@ fn handle_notification(state: &AppState, v: &serde_json::Value) {
         return;
     }
     let clients = crate::broadcast_play_video(&state.tx, &reward, &user);
-    println!("[Twitch] Canje '{reward}' por {user} → overlays: {clients}");
+    logln!("[Twitch] Canje '{reward}' por {user} → overlays: {clients}");
 }

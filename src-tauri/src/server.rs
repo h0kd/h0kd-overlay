@@ -1,3 +1,4 @@
+use crate::logln;
 use crate::AppState;
 use axum::{
     extract::{
@@ -50,8 +51,8 @@ pub async fn start(state: AppState) -> std::io::Result<()> {
     if let Ok(mut h) = health.lock() {
         *h = crate::ServerHealth::Ok;
     }
-    println!("[Server] Listening on http://{}", bind);
-    println!("[Server] Overlay (OBS) → http://{}/overlay", bind);
+    logln!("[Server] Listening on http://{}", bind);
+    logln!("[Server] Overlay (OBS) → http://{}/overlay", bind);
 
     axum::serve(listener, app)
         .await
@@ -98,7 +99,7 @@ async fn handle_ws(
     })
     .to_string();
     let _ = sink.send(Message::Text(hello)).await;
-    println!("[WS] Overlay conectado. Total: {}", tx.receiver_count());
+    logln!("[WS] Overlay conectado. Total: {}", tx.receiver_count());
 
     // Reader: drain incoming messages and notice when the overlay goes away.
     // Breaking on Close (or any error) lets us reap the connection promptly so
@@ -149,7 +150,7 @@ async fn handle_ws(
         _ = &mut read  => { write.abort(); }
         _ = &mut write => { read.abort();  }
     }
-    println!("[WS] Overlay desconectado. Total: {}", tx.receiver_count().saturating_sub(1));
+    logln!("[WS] Overlay desconectado. Total: {}", tx.receiver_count().saturating_sub(1));
 }
 
 /// Traduce lo que manda el overlay. Devuelve `None` para cualquier cosa que

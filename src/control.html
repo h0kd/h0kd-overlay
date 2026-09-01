@@ -780,6 +780,7 @@
   <span class="hdr-spacer"></span>
   <span id="statusBadge">Sin cambios</span>
   <button class="hdr-btn" id="openFolderBtn" title="Abrir carpeta con config.json y videos/"><svg class="icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>Carpeta</button>
+  <button class="hdr-btn" id="openLogsBtn" title="Abrir la carpeta de logs (para mandarlos si algo falló)"><svg class="icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v5h5"/><path d="M8 13h8"/><path d="M8 17h5"/></svg>Logs</button>
   <span id="overlayTools">
     <select id="testRewardSel"></select>
     <button id="testBtn"><svg class="icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="6 3 20 12 6 21 6 3"/></svg>Probar</button>
@@ -1076,6 +1077,9 @@
     document.getElementById('canvasH').addEventListener('input', function(){ cfg.canvas.height = parseInt(this.value)||1080; markDirty(); });
     document.getElementById('openFolderBtn').addEventListener('click', function() {
       invoke('open_data_dir').catch(function(e){ alert('Error: ' + e); });
+    });
+    document.getElementById('openLogsBtn').addEventListener('click', function() {
+      invoke('open_logs_dir').catch(function(e){ alert('Error: ' + e); });
     });
 
     // Click-to-copy URLs in footer
