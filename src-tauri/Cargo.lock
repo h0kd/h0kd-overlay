@@ -3724,6 +3724,7 @@ name = "stream-overlay"
 version = "0.2.9"
 dependencies = [
  "axum",
+ "chrono",
  "futures-util",
  "open",
  "reqwest 0.12.28",

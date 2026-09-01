@@ -12,6 +12,9 @@ import type { Platform } from './protocol.ts';
 /** host exacto o sufijo `.host` -> plataforma. */
 const ALLOWED: Array<{ host: string; platform: Platform }> = [
   { host: 'instagram.com', platform: 'instagram' },
+  // vm./vt.tiktok.com entran por la regla de sufijo: son los links cortos que
+  // genera la propia app y redirigen dentro de TikTok.
+  { host: 'tiktok.com', platform: 'tiktok' },
   { host: 'twitch.tv', platform: 'twitch' },
   { host: 'clips.twitch.tv', platform: 'twitch' },
   { host: 'youtube.com', platform: 'youtube' },
@@ -66,6 +69,20 @@ export function checkUrl(raw: string): UrlCheck {
     const okPath = /^\/(reel|reels|p|tv)\/[A-Za-z0-9_-]+\/?$/.test(u.pathname);
     if (!okPath) {
       return { ok: false, reason: 'De Instagram solo se aceptan Reels (instagram.com/reel/...).' };
+    }
+  }
+
+  // TikTok tiene dos formas de link y hay que aceptar las dos, porque la app
+  // comparte una y el navegador la otra. El link corto (vm./vt.) no dice nada
+  // en el path, así que se acepta por el host. Lo que no pasa nunca es el
+  // perfil pelado: para yt-dlp eso es una playlist entera, no un video.
+  if (match.platform === 'tiktok') {
+    const corto = host === 'vm.tiktok.com' || host === 'vt.tiktok.com';
+    const okPath = corto
+      ? /^\/[A-Za-z0-9]+\/?$/.test(u.pathname)
+      : /^\/(@[A-Za-z0-9_.]+\/video|t)\/[A-Za-z0-9]+\/?$/.test(u.pathname);
+    if (!okPath) {
+      return { ok: false, reason: 'De TikTok solo se aceptan videos, no perfiles.' };
     }
   }
 

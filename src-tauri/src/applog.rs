@@ -8,16 +8,15 @@
 //! Un archivo por día en `<data_dir>/logs/`, y se borran los viejos: un log que
 //! crece sin límite en la máquina de otro es un problema, no una herramienta.
 //!
-//! **Las horas son UTC**, a propósito. Sacar la hora local sin sumar una
-//! dependencia significa llamar a la API de Windows, y no vale una caja nueva
-//! en el Cargo.toml por un formato de fecha. Lo que importa para diagnosticar
-//! es el orden y la distancia entre los eventos, y eso UTC lo da igual.
+//! Las horas son las del reloj del streamer, no UTC. Es lo que hace que el log
+//! sirva: quien lo lee va a estar buscando "el video que no salió cuando eran
+//! las once y media", y no tiene por qué convertir nada para encontrarlo.
 
+use chrono::{Local, NaiveDate};
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Días de log que se conservan.
 const KEEP_DAYS: i64 = 7;
@@ -45,10 +44,10 @@ pub fn dir(data_dir: &Path) -> PathBuf {
 /// ni preocuparse por vaciar el buffer si la app se cierra de golpe.
 pub fn line(msg: &str) {
     let Some(dir) = DIR.get() else { return };
-    let (y, mo, d, h, mi, s) = now_utc();
-    let path = dir.join(format!("{y:04}-{mo:02}-{d:02}.log"));
+    let ahora = Local::now();
+    let path = dir.join(format!("{}.log", ahora.format("%Y-%m-%d")));
     if let Ok(mut f) = OpenOptions::new().create(true).append(true).open(path) {
-        let _ = writeln!(f, "{h:02}:{mi:02}:{s:02}Z {msg}");
+        let _ = writeln!(f, "{} {msg}", ahora.format("%H:%M:%S"));
     }
 }
 
@@ -66,81 +65,18 @@ macro_rules! logln {
 }
 
 fn prune(dir: &Path) {
-    let hoy = days_from_epoch();
+    let hoy = Local::now().date_naive();
     let Ok(entries) = fs::read_dir(dir) else { return };
     for e in entries.flatten() {
         let name = e.file_name().to_string_lossy().to_string();
         let Some(fecha) = name.strip_suffix(".log") else { continue };
-        let Some(dias) = days_from_name(fecha) else { continue };
-        if hoy - dias > KEEP_DAYS {
+        // Lo que no tiene forma de fecha no se toca: en esa carpeta puede haber
+        // cualquier cosa, y borrar por las dudas es peor que dejar de más.
+        let Ok(dia) = NaiveDate::parse_from_str(fecha, "%Y-%m-%d") else { continue };
+        if (hoy - dia).num_days() > KEEP_DAYS {
             let _ = fs::remove_file(e.path());
         }
     }
-}
-
-/// `YYYY-MM-DD` -> días desde epoch. `None` si el nombre no tiene esa forma:
-/// en esa carpeta puede haber cualquier cosa y no se borra lo que no se entiende.
-fn days_from_name(s: &str) -> Option<i64> {
-    let mut p = s.split('-');
-    let y: i64 = p.next()?.parse().ok()?;
-    let m: u32 = p.next()?.parse().ok()?;
-    let d: u32 = p.next()?.parse().ok()?;
-    if p.next().is_some() || !(1..=12).contains(&m) || !(1..=31).contains(&d) {
-        return None;
-    }
-    Some(days_from_civil(y, m, d))
-}
-
-fn days_from_epoch() -> i64 {
-    let secs = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0) as i64;
-    secs.div_euclid(86_400)
-}
-
-fn now_utc() -> (i64, u32, u32, u32, u32, u32) {
-    let secs = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0) as i64;
-    let resto = secs.rem_euclid(86_400);
-    let (y, m, d) = civil_from_days(secs.div_euclid(86_400));
-    (
-        y,
-        m,
-        d,
-        (resto / 3600) as u32,
-        ((resto % 3600) / 60) as u32,
-        (resto % 60) as u32,
-    )
-}
-
-// Las dos conversiones de abajo son el algoritmo de calendario de Howard
-// Hinnant (dominio público, http://howardhinnant.github.io/date_algorithms.html).
-// Están acá para no sumar `chrono` al proyecto por un nombre de archivo.
-
-fn civil_from_days(z: i64) -> (i64, u32, u32) {
-    let z = z + 719_468;
-    let era = z.div_euclid(146_097);
-    let doe = z.rem_euclid(146_097);
-    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
-    let y = yoe + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = (doy - (153 * mp + 2) / 5 + 1) as u32;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 } as u32;
-    (if m <= 2 { y + 1 } else { y }, m, d)
-}
-
-fn days_from_civil(y: i64, m: u32, d: u32) -> i64 {
-    let y = if m <= 2 { y - 1 } else { y };
-    let era = y.div_euclid(400);
-    let yoe = y.rem_euclid(400);
-    let mp = if m > 2 { m - 3 } else { m + 9 } as i64;
-    let doy = (153 * mp + 2) / 5 + d as i64 - 1;
-    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    era * 146_097 + doe - 719_468
 }
 
 #[cfg(test)]
@@ -148,19 +84,29 @@ mod tests {
     use super::*;
 
     #[test]
-    fn las_dos_conversiones_son_inversas() {
-        for (y, m, d) in [(1970, 1, 1), (2026, 8, 31), (2024, 2, 29), (2000, 12, 31)] {
-            let dias = days_from_civil(y, m, d);
-            assert_eq!(civil_from_days(dias), (y, m, d), "{y}-{m}-{d}");
-        }
-        assert_eq!(days_from_civil(1970, 1, 1), 0);
-    }
+    fn se_conservan_los_de_la_ultima_semana_y_se_borran_los_viejos() {
+        let dir = std::env::temp_dir().join(format!("applog-test-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
 
-    #[test]
-    fn solo_se_entienden_los_nombres_con_forma_de_fecha() {
-        assert_eq!(days_from_name("2026-08-31"), Some(days_from_civil(2026, 8, 31)));
-        assert_eq!(days_from_name("cookies"), None);
-        assert_eq!(days_from_name("2026-13-01"), None);
-        assert_eq!(days_from_name("2026-08-31-viejo"), None);
+        let hoy = Local::now().date_naive();
+        let nombre = |d: i64| format!("{}.log", hoy - chrono::Duration::days(d));
+        for d in [0, KEEP_DAYS, KEEP_DAYS + 1, 90] {
+            fs::write(dir.join(nombre(d)), b"x").unwrap();
+        }
+        // Nombres que no son fechas: no son nuestros y no se borran.
+        fs::write(dir.join("notas.log"), b"x").unwrap();
+        fs::write(dir.join("cookies.txt"), b"x").unwrap();
+
+        prune(&dir);
+
+        assert!(dir.join(nombre(0)).exists(), "el de hoy tiene que quedar");
+        assert!(dir.join(nombre(KEEP_DAYS)).exists(), "el del límite tiene que quedar");
+        assert!(!dir.join(nombre(KEEP_DAYS + 1)).exists(), "el de más de una semana se va");
+        assert!(!dir.join(nombre(90)).exists(), "el viejo se va");
+        assert!(dir.join("notas.log").exists(), "lo que no es fecha no se toca");
+        assert!(dir.join("cookies.txt").exists(), "lo que no es .log no se toca");
+
+        let _ = fs::remove_dir_all(&dir);
     }
 }

@@ -40,9 +40,13 @@ struct DumpJson {
 
 /// Argumentos comunes a metadata y descarga.
 ///
-/// Las cookies solo se pasan en Instagram: Twitch y YouTube funcionan anónimos,
-/// y mandar la sesión de la cuenta dedicada a sitios que no la necesitan es
-/// exposición gratis.
+/// Las cookies solo se pasan en Instagram: TikTok, Twitch y YouTube funcionan
+/// anónimos, y mandar la sesión de la cuenta dedicada a sitios que no la
+/// necesitan es exposición gratis.
+///
+/// El ritmo bajo, en cambio, también va para TikTok: no pide login, pero corta
+/// por ritmo igual que Instagram si le llueven pedidos seguidos, y en un stream
+/// con cola le llueven.
 fn base_args(platform: Platform, cookies: Option<&Path>) -> Vec<String> {
     let mut a = vec![
         "--no-playlist".to_string(),
@@ -50,9 +54,11 @@ fn base_args(platform: Platform, cookies: Option<&Path>) -> Vec<String> {
         // Sin colores ANSI: el stderr se parsea y se muestra en una UI.
         "--no-progress".to_string(),
     ];
-    if platform == Platform::Instagram {
+    if platform == Platform::Instagram || platform == Platform::Tiktok {
         a.push("--sleep-requests".to_string());
         a.push(SLEEP_REQUESTS.to_string());
+    }
+    if platform == Platform::Instagram {
         if let Some(c) = cookies {
             a.push("--cookies".to_string());
             a.push(c.to_string_lossy().into_owned());

@@ -12,6 +12,7 @@ use std::fmt;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Platform {
     Instagram,
+    Tiktok,
     Twitch,
     Youtube,
 }
@@ -20,6 +21,7 @@ impl Platform {
     pub fn as_str(self) -> &'static str {
         match self {
             Platform::Instagram => "instagram",
+            Platform::Tiktok => "tiktok",
             Platform::Twitch => "twitch",
             Platform::Youtube => "youtube",
         }
@@ -28,6 +30,7 @@ impl Platform {
     pub fn parse(s: &str) -> Option<Platform> {
         match s {
             "instagram" => Some(Platform::Instagram),
+            "tiktok" => Some(Platform::Tiktok),
             "twitch" => Some(Platform::Twitch),
             "youtube" => Some(Platform::Youtube),
             _ => None,
@@ -43,6 +46,9 @@ impl fmt::Display for Platform {
 
 const ALLOWED: &[(&str, Platform)] = &[
     ("instagram.com", Platform::Instagram),
+    // vm./vt.tiktok.com entran solos por la regla de sufijo: son los links
+    // cortos que genera la propia app y redirigen dentro de TikTok.
+    ("tiktok.com", Platform::Tiktok),
     ("twitch.tv", Platform::Twitch),
     ("clips.twitch.tv", Platform::Twitch),
     ("youtube.com", Platform::Youtube),
@@ -106,8 +112,42 @@ pub fn check(url: &str) -> Result<Platform> {
             "De Instagram solo se aceptan Reels y posts de video.",
         ));
     }
+    if platform == Platform::Tiktok && !is_tiktok_media_path(host, path) {
+        return Err(ErrorDetail::new(
+            ErrorCode::UnsupportedPlatform,
+            "De TikTok solo se aceptan videos, no perfiles.",
+        ));
+    }
 
     Ok(platform)
+}
+
+/// TikTok tiene dos formas de link y hay que aceptar las dos, porque la app
+/// comparte una y el navegador la otra:
+///
+/// - `tiktok.com/@usuario/video/123...` y `tiktok.com/t/CODIGO`, y
+/// - `vm.tiktok.com/CODIGO` (el link corto), donde el path es un solo segmento
+///   y no dice nada del contenido. Ese caso se acepta por el host: son dominios
+///   de TikTok que solo redirigen adentro de TikTok.
+///
+/// Lo que se rechaza en todos los casos es el perfil pelado (`/@usuario`), que
+/// para yt-dlp es una playlist entera y no un video.
+fn is_tiktok_media_path(host: &str, path: &str) -> bool {
+    let clean = path.split(['?', '#']).next().unwrap_or(path);
+    let partes: Vec<&str> = clean.trim_matches('/').split('/').filter(|s| !s.is_empty()).collect();
+
+    if host == "vm.tiktok.com" || host == "vt.tiktok.com" {
+        return partes.len() == 1 && es_codigo(partes[0]);
+    }
+    match partes.as_slice() {
+        [usuario, "video", id] => usuario.starts_with('@') && es_codigo(id),
+        ["t", codigo] => es_codigo(codigo),
+        _ => false,
+    }
+}
+
+fn es_codigo(s: &str) -> bool {
+    !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric())
 }
 
 fn is_instagram_media_path(path: &str) -> bool {
@@ -137,6 +177,29 @@ mod tests {
     fn acepta_twitch_y_youtube() {
         assert_eq!(check("https://clips.twitch.tv/AlgunClip"), Ok(Platform::Twitch));
         assert_eq!(check("https://youtu.be/abc123"), Ok(Platform::Youtube));
+    }
+
+    #[test]
+    fn acepta_las_dos_formas_de_tiktok() {
+        for u in [
+            "https://www.tiktok.com/@alguien/video/7412345678901234567",
+            "https://tiktok.com/t/ZM8abc123",
+            "https://vm.tiktok.com/ZM8abc123",
+            "https://vt.tiktok.com/ZM8abc123/",
+        ] {
+            assert_eq!(check(u).unwrap(), Platform::Tiktok, "{u}");
+        }
+    }
+
+    #[test]
+    fn de_tiktok_no_pasa_un_perfil() {
+        for u in [
+            "https://www.tiktok.com/@alguien",
+            "https://www.tiktok.com/@alguien/video/",
+            "https://www.tiktok.com/foo/bar/baz",
+        ] {
+            assert!(check(u).is_err(), "{u} no debería pasar");
+        }
     }
 
     #[test]

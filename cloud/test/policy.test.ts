@@ -52,6 +52,29 @@ test('de Instagram solo pasan reels y posts, no perfiles', () => {
   assert.equal(checkUrl('https://instagram.com/p/AbC123/').ok, true);
 });
 
+test('acepta las dos formas de link de TikTok', () => {
+  for (const u of [
+    'https://www.tiktok.com/@alguien/video/7412345678901234567',
+    'https://tiktok.com/t/ZM8abc123',
+    'https://vm.tiktok.com/ZM8abc123',
+    'https://vt.tiktok.com/ZM8abc123/',
+  ]) {
+    const r = checkUrl(u);
+    assert.equal(r.ok, true, u);
+    if (r.ok) assert.equal(r.platform, 'tiktok');
+  }
+});
+
+test('de TikTok no pasa un perfil', () => {
+  for (const u of [
+    'https://www.tiktok.com/@alguien',
+    'https://www.tiktok.com/@alguien/video/',
+    'https://www.tiktok.com/foo/bar/baz',
+  ]) {
+    assert.equal(checkUrl(u).ok, false, u);
+  }
+});
+
 test('la política cierra envíos con el stream offline', () => {
   const r = checkPolicy(
     { submissions_open: false, cooldown_seconds: 60, max_pending_per_user: 3 },
