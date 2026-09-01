@@ -76,7 +76,9 @@ export class ChannelHub implements DurableObject {
         await this.dispatchPending();
         return json({ ok: true });
       case '/internal/decision': {
-        const body = (await request.json()) as { item_id: string; approved: boolean; by: string };
+        const body = (await request.json()) as {
+          item_id: string; approved: boolean; by: string; reason?: string | null;
+        };
         await this.onDecision(body);
         return json({ ok: true });
       }
@@ -358,7 +360,9 @@ export class ChannelHub implements DurableObject {
     }
   }
 
-  private async onDecision(body: { item_id: string; approved: boolean; by: string }): Promise<void> {
+  private async onDecision(
+    body: { item_id: string; approved: boolean; by: string; reason?: string | null },
+  ): Promise<void> {
     const meta = await this.meta();
     if (!meta) return;
     const item = await q.getItem(this.env.DB, meta.channel_id, body.item_id);
@@ -382,7 +386,12 @@ export class ChannelHub implements DurableObject {
       }
     } else {
       // Lo rechazado NUNCA se descarga: no sale ningún download.request.
-      await q.setStatus(this.env.DB, meta.channel_id, item.id, 'rejected', { decided_by: body.by });
+      // El motivo se guarda con el rechazo y viaja al viewer: "rechazado" a
+      // secas es lo que hace que la gente vuelva a mandar lo mismo.
+      await q.setStatus(this.env.DB, meta.channel_id, item.id, 'rejected', {
+        decided_by: body.by,
+        decided_reason: body.reason ?? null,
+      });
       if (agent) send(agent, envelope('cancel', { item_id: item.id, reason: 'mod_rejected' }));
     }
     await this.pushQueueToMods();
@@ -464,6 +473,8 @@ export class ChannelHub implements DurableObject {
       platform: r.platform,
       submitter_login: r.submitter_login,
       error: r.error,
+      created_at: r.created_at,
+      decided_by: r.decided_by,
     }));
     return { items, waiting: waiting.length };
   }

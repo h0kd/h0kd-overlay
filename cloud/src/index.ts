@@ -286,6 +286,21 @@ app.post('/api/submit', async (c) => {
   return c.json({ ok: true });
 });
 
+interface MineRow {
+  id: string;
+  source_url: string;
+  platform: string;
+  title: string | null;
+  thumbnail_url: string | null;
+  duration_seconds: number | null;
+  status: string;
+  error: string | null;
+  decided_by: string | null;
+  decided_at: number | null;
+  decided_reason: string | null;
+  created_at: number;
+}
+
 app.get('/api/mine', async (c) => {
   const session = await getSession(c);
   if (!session) return c.json({ error: 'Iniciá sesión con Twitch.' }, 401);
@@ -293,17 +308,33 @@ app.get('/api/mine', async (c) => {
   if (!channel) return c.json({ error: 'Ese canal no está dado de alta.' }, 404);
 
   const res = await c.env.DB.prepare(
-    `SELECT id, source_url, title, status, error FROM queue_items
-     WHERE channel_id = ? AND submitter_twitch_id = ?
-     ORDER BY created_at DESC LIMIT 10`,
+    `SELECT id, source_url, platform, title, thumbnail_url, duration_seconds,
+            status, error, decided_by, decided_at, decided_reason, created_at
+       FROM queue_items
+      WHERE channel_id = ? AND submitter_twitch_id = ?
+      ORDER BY created_at DESC LIMIT 10`,
   )
     .bind(channel.channel_id, session.uid)
-    .all<{ id: string; source_url: string; title: string | null; status: string; error: string | null }>();
+    .all<MineRow>();
+
+  // La posición en cola sale de mirar TODOS los pedidos en juego del canal, no
+  // solo los de esta persona: "sos el cuarto" no significa nada si se cuenta
+  // únicamente lo tuyo. Es una segunda consulta y no un JOIN porque la cola en
+  // juego son unos pocos ítems y así el orden queda explícito acá.
+  const enJuego = await c.env.DB.prepare(
+    `SELECT id FROM queue_items
+      WHERE channel_id = ? AND status IN ('submitted','pending_review','approved','downloading','ready','playing')
+      ORDER BY created_at ASC`,
+  )
+    .bind(channel.channel_id)
+    .all<{ id: string }>();
+  const posicion = new Map((enJuego.results ?? []).map((r, i) => [r.id, i + 1]));
 
   return c.json({
     items: (res.results ?? []).map((r) => ({
       ...r,
       status_label: STATUS_LABEL[r.status] ?? r.status,
+      position: posicion.get(r.id) ?? null,
     })),
   });
 });
@@ -312,7 +343,7 @@ app.get('/api/mine', async (c) => {
 
 app.post('/api/decide', async (c) => {
   const session = await getSession(c);
-  const body = await readJson<{ ch: string; item_id: string; approved: boolean }>(c);
+  const body = await readJson<{ ch: string; item_id: string; approved: boolean; reason?: string }>(c);
   const channel = await resolveChannel(c.env, body.ch);
   if (!channel) return c.json({ error: 'Ese canal no está dado de alta.' }, 404);
 
@@ -321,13 +352,79 @@ app.post('/api/decide', async (c) => {
     return c.json({ error: 'No tenés permiso de moderación en este canal.' }, 403);
   }
   if (!body.item_id) return c.json({ error: 'Falta el item.' }, 400);
+  // El motivo es texto libre de un humano: se recorta y se acota acá, que es
+  // donde entra al sistema. Vacío vale: dar el motivo es opcional.
+  const motivo = typeof body.reason === 'string' ? body.reason.trim().slice(0, 300) : '';
 
   await notifyHub(c.env, channel, '/internal/decision', {
     item_id: body.item_id,
     approved: body.approved === true,
     by: session!.login,
+    reason: motivo || null,
   });
   return c.json({ ok: true });
+});
+
+interface HistoryRow {
+  id: string;
+  source_url: string;
+  platform: string;
+  title: string | null;
+  thumbnail_url: string | null;
+  duration_seconds: number | null;
+  status: string;
+  error: string | null;
+  submitter_login: string;
+  decided_by: string | null;
+  decided_at: number | null;
+  decided_reason: string | null;
+  created_at: number;
+}
+
+const HISTORY_COLS = `id, source_url, platform, title, thumbnail_url, duration_seconds,
+                      status, error, submitter_login, decided_by, decided_at,
+                      decided_reason, created_at`;
+
+/**
+ * Historial de lo que ya se decidió.
+ *
+ * Con `?mine=1` devuelve solo lo que decidió quien pregunta —el "mi historial"
+ * del panel de mods, para revisar lo propio sin ver el trabajo ajeno—; sin eso,
+ * el historial completo del canal, que es del broadcaster.
+ *
+ * El filtro por mod se hace por `decided_by`, que guarda el login. Es lo mismo
+ * que muestra el panel, así que un mod ve exactamente lo que firmó.
+ */
+app.get('/api/history', async (c) => {
+  const session = await getSession(c);
+  const channel = await resolveChannel(c.env, c.req.query('ch'));
+  if (!channel) return c.json({ error: 'Ese canal no está dado de alta.' }, 404);
+
+  const role = await roleFor(c.env, session, channel.channel_id);
+  if (role !== 'mod' && role !== 'broadcaster') {
+    return c.json({ error: 'No tenés permiso de moderación en este canal.' }, 403);
+  }
+
+  const soloMias = c.req.query('mine') === '1';
+  if (soloMias && !session) return c.json({ error: 'Iniciá sesión con Twitch.' }, 401);
+
+  // Terminados: lo que ya no está en juego. `cleared` entra porque para el mod
+  // "se limpió al terminar el stream" también es un final que quiere ver.
+  const estados = ['played', 'rejected', 'failed', 'cleared'];
+  const marcas = estados.map(() => '?').join(',');
+  const sql = soloMias
+    ? `SELECT ${HISTORY_COLS} FROM queue_items
+        WHERE channel_id = ? AND decided_by = ? AND status IN (${marcas})
+        ORDER BY COALESCE(decided_at, created_at) DESC LIMIT 40`
+    : `SELECT ${HISTORY_COLS} FROM queue_items
+        WHERE channel_id = ? AND status IN (${marcas})
+        ORDER BY COALESCE(decided_at, created_at) DESC LIMIT 40`;
+  const args = soloMias
+    ? [channel.channel_id, session!.login, ...estados]
+    : [channel.channel_id, ...estados];
+
+  const res = await c.env.DB.prepare(sql).bind(...args).all<HistoryRow>();
+  return c.json({ items: res.results ?? [] });
 });
 
 // ── API de admin (solo el broadcaster, sobre su propio canal) ────────────────

@@ -270,7 +270,7 @@ export async function setStatus(
   channelId: string,
   id: string,
   status: ItemStatus,
-  extra: { error?: string | null; decided_by?: string } = {},
+  extra: { error?: string | null; decided_by?: string; decided_reason?: string | null } = {},
 ): Promise<void> {
   const sets = ['status = ?'];
   const vals: unknown[] = [status];
@@ -281,6 +281,10 @@ export async function setStatus(
   if (extra.decided_by !== undefined) {
     sets.push('decided_by = ?', 'decided_at = ?');
     vals.push(extra.decided_by, Date.now());
+  }
+  if (extra.decided_reason !== undefined) {
+    sets.push('decided_reason = ?');
+    vals.push(extra.decided_reason);
   }
   vals.push(channelId, id);
   await db

@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS queue_items (
   duration_seconds    INTEGER,
   decided_by          TEXT,
   decided_at          INTEGER,
+  decided_reason      TEXT,              -- motivo del rechazo, lo escribe el mod
   created_at          INTEGER NOT NULL,
   error               TEXT
 );
