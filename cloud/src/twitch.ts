@@ -224,6 +224,14 @@ const STREAM_EVENTS = ['stream.online', 'stream.offline'] as const;
  */
 export async function subscribeStreamEvents(env: Env, broadcasterId: string): Promise<void> {
   const token = await appToken(env);
+  const callback = `${env.PUBLIC_ORIGIN}/eventsub`;
+
+  // Si el Worker cambió de dominio, las suscripciones viejas siguen apuntando
+  // al callback anterior y Twitch las sigue considerando "existentes": el POST
+  // de abajo daría 409 y el canal quedaría escuchando en una URL muerta. Se
+  // borran las que no apunten al callback actual antes de crear las nuevas.
+  await dropStaleSubscriptions(env, token, broadcasterId, callback);
+
   for (const type of STREAM_EVENTS) {
     const res = await fetch(`${HELIX}/eventsub/subscriptions`, {
       method: 'POST',
@@ -238,7 +246,7 @@ export async function subscribeStreamEvents(env: Env, broadcasterId: string): Pr
         condition: { broadcaster_user_id: broadcasterId },
         transport: {
           method: 'webhook',
-          callback: `${env.PUBLIC_ORIGIN}/eventsub`,
+          callback,
           secret: env.EVENTSUB_SECRET,
         },
       }),
@@ -246,6 +254,53 @@ export async function subscribeStreamEvents(env: Env, broadcasterId: string): Pr
     if (res.status === 409) continue; // ya existía
     if (!res.ok) {
       throw new Error(`No se pudo suscribir ${type} (${res.status}): ${await res.text()}`);
+    }
+  }
+}
+
+interface EventSubRow {
+  id: string;
+  type: string;
+  condition: { broadcaster_user_id?: string };
+  transport: { method: string; callback?: string };
+}
+
+/**
+ * Borra las suscripciones de stream.online/offline de este canal que apunten a
+ * otro callback. Best effort: si listar o borrar falla, se sigue igual y el
+ * POST de alta dirá lo suyo.
+ */
+async function dropStaleSubscriptions(
+  env: Env,
+  token: string,
+  broadcasterId: string,
+  callback: string,
+): Promise<void> {
+  const headers = { 'Client-Id': env.TWITCH_CLIENT_ID, Authorization: `Bearer ${token}` };
+  let rows: EventSubRow[];
+  try {
+    const res = await fetch(
+      `${HELIX}/eventsub/subscriptions?user_id=${encodeURIComponent(broadcasterId)}`,
+      { headers },
+    );
+    if (!res.ok) return;
+    rows = ((await res.json()) as { data?: EventSubRow[] }).data ?? [];
+  } catch {
+    return;
+  }
+  for (const row of rows) {
+    const ours = (STREAM_EVENTS as readonly string[]).includes(row.type)
+      && row.transport.method === 'webhook'
+      && row.condition.broadcaster_user_id === broadcasterId;
+    if (!ours || row.transport.callback === callback) continue;
+    console.log(`[eventsub] borro ${row.type} que apuntaba a ${row.transport.callback}`);
+    try {
+      await fetch(`${HELIX}/eventsub/subscriptions?id=${encodeURIComponent(row.id)}`, {
+        method: 'DELETE',
+        headers,
+      });
+    } catch {
+      // Se reintenta en la próxima visita a /admin.
     }
   }
 }
