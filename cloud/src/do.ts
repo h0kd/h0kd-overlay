@@ -463,6 +463,15 @@ export class ChannelHub implements DurableObject {
       'playing',
       'failed',
     ]);
+    // Lo que hay que revisar va arriba, y dentro de cada grupo lo más nuevo
+    // primero. La base los da por orden de llegada, que es el orden de
+    // reproducción, pero el mod no mira eso: mira qué le falta decidir, y
+    // con la cola larga lo pendiente quedaba abajo de todo lo ya aprobado.
+    rows.sort((a, b) => {
+      const pa = a.status === 'pending_review' ? 0 : 1;
+      const pb = b.status === 'pending_review' ? 0 : 1;
+      return pa - pb || b.created_at - a.created_at;
+    });
     const fotos = await q.picsFor(
       this.env.DB,
       rows.flatMap((r) => [r.submitter_login, r.decided_by]),
