@@ -346,15 +346,22 @@ export async function setMetadata(
 /**
  * Fin de stream: todo lo que estaba en juego pasa a `cleared`. Lo ya
  * reproducido y lo rechazado se dejan como están, que son el historial.
+ *
+ * Los `failed` también se limpian. No cuentan como "en juego" para los
+ * límites del viewer, pero el panel de mods los muestra en la cola para que
+ * se vea qué falló, y sin esto se quedaban ahí de un stream al otro: tras
+ * el primer stream real la cola arrancaba con siete fallos viejos. El texto
+ * del error se conserva y el historial lo sigue mostrando.
  */
 export async function clearQueue(db: D1Database, channelId: string): Promise<number> {
-  const placeholders = LIVE_STATUSES.map(() => '?').join(',');
+  const limpiar = [...LIVE_STATUSES, 'failed'];
+  const placeholders = limpiar.map(() => '?').join(',');
   const res = await db
     .prepare(
       `UPDATE queue_items SET status = 'cleared'
        WHERE channel_id = ? AND status IN (${placeholders})`,
     )
-    .bind(channelId, ...LIVE_STATUSES)
+    .bind(channelId, ...limpiar)
     .run();
   return res.meta.changes ?? 0;
 }
