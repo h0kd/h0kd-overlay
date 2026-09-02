@@ -82,11 +82,17 @@ export function checkUrl(raw: string): UrlCheck {
     return { ok: true, platform: 'kappa', url: `https://kappa.lol/${m[1]}` };
   }
 
-  // Instagram: solo reels y posts de video. Perfiles y stories no.
+  // Instagram: SOLO reels. Los posts (/p/) se aceptaban por si eran de video,
+  // y en el primer stream real la mayoría fueron fotos: el agente los leía,
+  // yt-dlp decía "There is no video in this post" y el viewer veía un fallo
+  // críptico minutos después. Mejor decírselo al enviar, con el link correcto.
   if (match.platform === 'instagram') {
-    const okPath = /^\/(reel|reels|p|tv)\/[A-Za-z0-9_-]+\/?$/.test(u.pathname);
+    const okPath = /^\/(reel|reels)\/[A-Za-z0-9_-]+\/?$/.test(u.pathname);
     if (!okPath) {
-      return { ok: false, reason: 'De Instagram solo se aceptan Reels (instagram.com/reel/...).' };
+      return {
+        ok: false,
+        reason: 'De Instagram solo se aceptan Reels (instagram.com/reel/...). Los posts y fotos no.',
+      };
     }
   }
 
@@ -136,6 +142,8 @@ export function allowedHosts(): string[] {
 
 export interface SubmissionPolicy {
   submissions_open: boolean;
+  /** Lo último que dijo EventSub del stream. Solo cambia el mensaje. */
+  stream_online: boolean;
   cooldown_seconds: number;
   max_pending_per_user: number;
 }
@@ -155,7 +163,15 @@ export function checkPolicy(
   now: number,
 ): PolicyCheck {
   if (!policy.submissions_open) {
-    return { ok: false, reason: 'Los envíos están cerrados (el stream está offline).' };
+    // Cerrado puede ser porque el stream terminó o porque el streamer los
+    // pausó a mano en pleno directo. Decir "offline" en el segundo caso hizo
+    // que los viewers le avisaran al streamer que Twitch lo había tirado.
+    return {
+      ok: false,
+      reason: policy.stream_online
+        ? 'Los envíos están pausados por ahora: el streamer los cerró.'
+        : 'Los envíos están cerrados (el stream está offline).',
+    };
   }
   if (state.pending_count >= policy.max_pending_per_user) {
     return {

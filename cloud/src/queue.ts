@@ -94,6 +94,7 @@ export async function channelById(db: D1Database, channelId: string) {
 
 interface SettingsRow {
   submissions_open: number;
+  stream_online: number;
   who_can_submit: string;
   cooldown_seconds: number;
   max_pending_per_user: number;
@@ -104,6 +105,9 @@ interface SettingsRow {
 }
 
 export interface FullSettings extends ChannelSettings {
+  /** Lo último que dijo EventSub. Aparte de `submissions_open` porque el
+   *  interruptor manual de /admin cambia uno solo de los dos. */
+  stream_online: boolean;
   who_can_submit: string;
   cooldown_seconds: number;
   max_pending_per_user: number;
@@ -115,10 +119,17 @@ export async function getSettings(db: D1Database, channelId: string): Promise<Fu
     .bind(channelId)
     .first<SettingsRow>();
   if (!row) {
-    return { ...DEFAULT_SETTINGS, who_can_submit: 'everyone', cooldown_seconds: 60, max_pending_per_user: 3 };
+    return {
+      ...DEFAULT_SETTINGS,
+      stream_online: false,
+      who_can_submit: 'everyone',
+      cooldown_seconds: 60,
+      max_pending_per_user: 3,
+    };
   }
   return {
     submissions_open: row.submissions_open === 1,
+    stream_online: row.stream_online === 1,
     max_duration_seconds: row.max_duration_seconds,
     max_resolution: row.max_resolution === '1080' ? '1080' : '720',
     max_filesize_mb: row.max_filesize_mb,
@@ -129,10 +140,15 @@ export async function getSettings(db: D1Database, channelId: string): Promise<Fu
   };
 }
 
-export async function setSubmissionsOpen(db: D1Database, channelId: string, open: boolean) {
+/**
+ * Lo que manda EventSub: el stream arrancó o terminó. Abre o cierra los
+ * envíos Y deja anotado el estado del stream, que es lo que permite decirle
+ * al viewer por qué están cerrados.
+ */
+export async function setStreamState(db: D1Database, channelId: string, online: boolean) {
   await db
-    .prepare('UPDATE channel_settings SET submissions_open = ? WHERE channel_id = ?')
-    .bind(open ? 1 : 0, channelId)
+    .prepare('UPDATE channel_settings SET submissions_open = ?, stream_online = ? WHERE channel_id = ?')
+    .bind(online ? 1 : 0, online ? 1 : 0, channelId)
     .run();
 }
 

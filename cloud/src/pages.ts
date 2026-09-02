@@ -808,7 +808,9 @@ const VISTA = {
   $('#chLine').textContent = me.channel_login
     ? (me.submissions_open
         ? 'Canal de ' + me.channel_login + '. Un mod lo revisa antes de que salga en pantalla.'
-        : 'Canal de ' + me.channel_login + '. Los envíos están cerrados: el stream está offline.')
+        : me.stream_online
+          ? 'Canal de ' + me.channel_login + '. Los envíos están pausados por ahora: el streamer los cerró.'
+          : 'Canal de ' + me.channel_login + '. Los envíos están cerrados: el stream está offline.')
     : 'Canal desconocido';
 
   const nets = $('#nets');
@@ -1353,6 +1355,11 @@ const PILL = {
 };
 
 (async function () {
+  // /admin es por canal, como /submit y /mod: /admin?ch=<canal>. Sin ?ch= el
+  // servidor ya redirigió a quien tiene canal propio; si llegamos acá sin
+  // canal es que no hay sesión (o no es dueño de ninguno) y el login lo
+  // resuelve: el callback vuelve a /admin?ch=<su canal>.
+  const volver = ch ? '/admin?ch=' + encodeURIComponent(ch) : '/admin';
   let me;
   try { me = await api('/api/me?ch=' + encodeURIComponent(ch)); }
   catch (e) { $('#chLine').textContent = e.message; return; }
@@ -1363,23 +1370,35 @@ const PILL = {
     // siempre parece que la página se colgó.
     $('#chLine').textContent = 'Entrá con tu cuenta de Twitch para administrar la cola de tu canal.';
     $('#authCard').hidden = false;
-    $('#loginBtn').onclick = () => login('/admin');
+    $('#loginBtn').onclick = () => login(volver);
+    return;
+  }
+  if (ch && me.role !== 'broadcaster') {
+    // La API también lo rechaza (403); esto es solo para decirlo en claro en
+    // vez de mostrar un panel vacío con errores.
+    $('#chLine').textContent = 'Este panel es solo para el dueño del canal ' + (me.channel_login || ch) + '.';
+    $('#authCard').hidden = false;
+    $('#authMsg').textContent = 'Tu cuenta (' + me.login + ') no es la dueña de este canal.';
+    $('#loginBtn').textContent = 'Entrar con otra cuenta';
+    $('#loginBtn').onclick = () => login(volver);
     return;
   }
 
+  const canal = ch || me.login;
+  // Toda la API de admin lleva el canal, y el servidor verifica que la sesión
+  // sea la del dueño de ESE canal.
+  const conCanal = (path) => path + (path.includes('?') ? '&' : '?') + 'ch=' + encodeURIComponent(canal);
+
   let data;
-  try { data = await api('/api/admin/overview'); }
+  try { data = await api(conCanal('/api/admin/overview')); }
   catch (e) {
     $('#authCard').hidden = false;
     $('#authMsg').textContent = e.message;
     $('#loginBtn').textContent = 'Entrar con otra cuenta';
-    $('#loginBtn').onclick = () => login('/admin');
+    $('#loginBtn').onclick = () => login(volver);
     return;
   }
   $('#panel').hidden = false;
-  // /admin no lleva ?ch= en la URL y /api/me sin ese parametro devuelve solo el
-  // usuario. Acá el canal es, por definición, el del broadcaster que entró.
-  const canal = ch || me.login;
   $('#chLine').textContent = 'Todo lo que pasa por la cola de ' + canal + ': estado general, historial, moderadores y actividad por viewer.';
 
   // ── Links para compartir ──
@@ -1415,7 +1434,7 @@ const PILL = {
   }
   async function cargarStats() {
     let st;
-    try { st = await api('/api/admin/stats'); } catch (e) { return; }
+    try { st = await api(conCanal('/api/admin/stats')); } catch (e) { return; }
     const box = $('#stats');
     box.textContent = '';
     box.appendChild(tarjetaStat('warn', 'En cola ahora', String(st.en_cola),
@@ -1602,7 +1621,7 @@ const PILL = {
   async function cargarViewers() {
     const cuerpo = $('#viewers');
     let data;
-    try { data = await api('/api/admin/viewers'); } catch (e) { return; }
+    try { data = await api(conCanal('/api/admin/viewers')); } catch (e) { return; }
     viewersCargados = true;
     cuerpo.textContent = '';
     if (!data.viewers.length) {
@@ -1707,7 +1726,7 @@ const PILL = {
       cb.onchange = async () => {
         cb.disabled = true;
         try {
-          await api('/api/admin/mods', { method: 'POST', headers: { 'content-type': 'application/json' },
+          await api(conCanal('/api/admin/mods'), { method: 'POST', headers: { 'content-type': 'application/json' },
             body: JSON.stringify({ user_id: m.user_id, login: m.user_login, authorized: cb.checked }) });
           m.authorized = cb.checked;
           $('#modCount').textContent = data.mods.filter((x) => x.authorized).length;
@@ -1744,15 +1763,21 @@ const PILL = {
   for (const k of KEYS) $('#' + k).value = data.settings[k];
   $('#submissions_open').checked = !!data.settings.submissions_open;
 
+  // "Guardado." se va solo a los segundos; un error se queda hasta que se
+  // vuelva a guardar. Con el aviso fijo no se sabía si el segundo click había
+  // guardado algo o seguía mostrando el de antes.
+  let msgTimer = null;
   $('#saveBtn').onclick = async function () {
     this.disabled = true;
+    clearTimeout(msgTimer);
     const patch = {};
     for (const k of KEYS) patch[k] = $('#' + k).value;
     patch.submissions_open = $('#submissions_open').checked;
     try {
-      await api('/api/admin/settings', { method: 'POST', headers: { 'content-type': 'application/json' },
+      await api(conCanal('/api/admin/settings'), { method: 'POST', headers: { 'content-type': 'application/json' },
         body: JSON.stringify(patch) });
       show($('#msg'), 'Guardado.', 'ok');
+      msgTimer = setTimeout(() => show($('#msg'), '', ''), 2500);
     } catch (e) { show($('#msg'), e.message, 'err'); }
     this.disabled = false;
   };
@@ -1760,7 +1785,7 @@ const PILL = {
   $('#pairBtn').onclick = async function () {
     this.disabled = true;
     try {
-      const r = await api('/api/admin/pair', { method: 'POST' });
+      const r = await api(conCanal('/api/admin/pair'), { method: 'POST' });
       const caja = $('#pairCode');
       caja.hidden = false;
       caja.textContent = r.code;

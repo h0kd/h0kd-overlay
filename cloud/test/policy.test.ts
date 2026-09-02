@@ -46,10 +46,17 @@ test('rechaza esquemas y formas peligrosas', () => {
   }
 });
 
-test('de Instagram solo pasan reels y posts, no perfiles', () => {
+test('de Instagram solo pasan reels: ni perfiles, ni stories, ni posts', () => {
   assert.equal(checkUrl('https://instagram.com/algun_usuario').ok, false);
   assert.equal(checkUrl('https://instagram.com/stories/user/123/').ok, false);
-  assert.equal(checkUrl('https://instagram.com/p/AbC123/').ok, true);
+  assert.equal(checkUrl('https://instagram.com/reels/AbC123/').ok, true);
+  // Un /p/ puede ser video, pero casi siempre es foto y el viewer se entera
+  // recién cuando falla. Se rechaza al enviar, diciendo cuál es el link bueno.
+  for (const u of ['https://instagram.com/p/AbC123/', 'https://instagram.com/tv/AbC123/']) {
+    const r = checkUrl(u);
+    assert.equal(r.ok, false, u);
+    if (!r.ok) assert.match(r.reason, /Reels/);
+  }
 });
 
 test('de YouTube conserva el id del video y tira el resto', () => {
@@ -129,16 +136,30 @@ test('de kappa.lol no pasan el index, las páginas del sitio ni los subdominios'
 
 test('la política cierra envíos con el stream offline', () => {
   const r = checkPolicy(
-    { submissions_open: false, cooldown_seconds: 60, max_pending_per_user: 3 },
+    { submissions_open: false, stream_online: false, cooldown_seconds: 60, max_pending_per_user: 3 },
     { last_submit_at: null, pending_count: 0 },
     Date.now(),
   );
   assert.equal(r.ok, false);
+  if (!r.ok) assert.match(r.reason, /offline/);
+});
+
+test('cerrados a mano en pleno stream no dice que el stream está offline', () => {
+  const r = checkPolicy(
+    { submissions_open: false, stream_online: true, cooldown_seconds: 60, max_pending_per_user: 3 },
+    { last_submit_at: null, pending_count: 0 },
+    Date.now(),
+  );
+  assert.equal(r.ok, false);
+  if (!r.ok) {
+    assert.doesNotMatch(r.reason, /offline/);
+    assert.match(r.reason, /pausados/);
+  }
 });
 
 test('la política respeta el cooldown y el máximo en cola', () => {
   const now = Date.now();
-  const policy = { submissions_open: true, cooldown_seconds: 60, max_pending_per_user: 3 };
+  const policy = { submissions_open: true, stream_online: true, cooldown_seconds: 60, max_pending_per_user: 3 };
 
   assert.equal(checkPolicy(policy, { last_submit_at: null, pending_count: 0 }, now).ok, true);
   assert.equal(checkPolicy(policy, { last_submit_at: now - 30_000, pending_count: 0 }, now).ok, false);

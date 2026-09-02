@@ -1006,14 +1006,19 @@ fn pipeline_config(data_dir: &Path, limits: &ChannelLimits) -> core::PipelineCon
 
 /// Un fallo por login degrada el estado de las cookies. El archivo no dice si
 /// sirve; solo lo dice haberlo usado.
+///
+/// Y solo eso. El fallo de un pedido en particular NO va a `s.error`: la UI
+/// lo pinta en la tarjeta de emparejamiento, en rojo, como si la conexión
+/// estuviera rota. En stream el streamer vio "yt-dlp no pudo leer el video"
+/// debajo de "conectado" por un link ajeno que ya figuraba como fallido en
+/// /mod. Esos fallos quedan en el log y en la nube, que es donde el mod y el
+/// viewer los ven.
 fn note_cookie_failure(e: &core::ErrorDetail, shared: &SharedVrStatus) {
     if e.code == core::ErrorCode::CookiesExpired {
         update(shared, |s| {
             s.cookies_state = "expired".into();
             s.error = Some(e.message.clone());
         });
-    } else {
-        update(shared, |s| s.error = Some(e.message.clone()));
     }
 }
 

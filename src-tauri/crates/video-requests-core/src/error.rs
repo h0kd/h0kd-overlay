@@ -55,6 +55,13 @@ impl ErrorDetail {
     pub fn new(code: ErrorCode, message: impl Into<String>) -> Self {
         ErrorDetail { code, message: message.into(), retryable: code.retryable() }
     }
+
+    /// Un fallo que por código no se reintenta pero que en la práctica es
+    /// pasajero. TikTok, por ejemplo, contesta páginas vacías de a ratos: el
+    /// extractor no está roto, es el sitio que no respondió esa vez.
+    pub fn transient(code: ErrorCode, message: impl Into<String>) -> Self {
+        ErrorDetail { code, message: message.into(), retryable: true }
+    }
 }
 
 impl fmt::Display for ErrorDetail {
@@ -94,6 +101,44 @@ pub fn classify_ytdlp_stderr(stderr: &str) -> ErrorDetail {
         return ErrorDetail::new(
             ErrorCode::RateLimited,
             "Instagram nos frenó por exceso de pedidos. Esperá un rato antes de reintentar.",
+        );
+    }
+    // Un post de Instagram que es foto o carrusel sin video. No es un fallo
+    // nuestro ni del extractor: no hay nada que reproducir. El Worker ya no
+    // deja mandar links /p/, pero un /reel/ que redirige a una foto llega acá.
+    if s.contains("there is no video in this post") {
+        return ErrorDetail::new(
+            ErrorCode::NotFound,
+            "Ese link es una foto o un post sin video. Solo se aceptan Reels.",
+        );
+    }
+    // TikTok devuelve de a ratos una página sin los datos que el extractor
+    // busca. Al siguiente intento suele andar: reintentable, no roto.
+    if s.contains("universal data for rehydration")
+        || s.contains("unexpected response from webpage request")
+    {
+        return ErrorDetail::transient(
+            ErrorCode::ExtractorFailed,
+            "TikTok no respondió bien esta vez; pasa seguido y se reintenta solo.",
+        );
+    }
+    // Timeouts de red del propio yt-dlp (curl 28, read timed out…). No es un
+    // extractor roto: es el sitio que tardó, y vale la pena volver a probar.
+    if s.contains("timed out") || s.contains("curl: (28)") || s.contains("timeout") {
+        return ErrorDetail::new(
+            ErrorCode::Timeout,
+            "El sitio tardó demasiado en responder.",
+        );
+    }
+    if s.contains("connection reset")
+        || s.contains("connection aborted")
+        || s.contains("curl: (56)")
+        || s.contains("curl: (35)")
+        || s.contains("remote end closed connection")
+    {
+        return ErrorDetail::new(
+            ErrorCode::DownloadFailed,
+            "Se cortó la conexión con el sitio.",
         );
     }
     if s.contains("video unavailable")
@@ -184,6 +229,36 @@ mod tests {
         // Reintentar con cookies muertas solo apura el bloqueo de la cuenta.
         assert!(!ErrorCode::CookiesExpired.retryable());
         assert!(ErrorCode::RateLimited.retryable());
+    }
+
+    #[test]
+    fn foto_de_instagram_no_es_extractor_roto() {
+        let out = "ERROR: [Instagram] DcBYXieBvua: There is no video in this post";
+        let d = classify_ytdlp_stderr(out);
+        assert_eq!(d.code, ErrorCode::NotFound);
+        assert!(!d.retryable);
+        assert!(d.message.contains("Reels"));
+    }
+
+    #[test]
+    fn tiktok_sin_datos_es_pasajero() {
+        for out in [
+            "ERROR: [TikTok] 764: Unable to extract universal data for rehydration; please report this issue",
+            "ERROR: [TikTok] 764: Unexpected response from webpage request; please report this issue",
+        ] {
+            let d = classify_ytdlp_stderr(out);
+            assert_eq!(d.code, ErrorCode::ExtractorFailed, "{out}");
+            assert!(d.retryable, "tiene que reintentarse: {out}");
+            assert!(!d.message.contains("actualizar yt-dlp"));
+        }
+    }
+
+    #[test]
+    fn timeout_de_red_es_reintentable() {
+        let out = "ERROR: [Instagram] DcT: Unable to download webpage: Failed to perform, curl: (28) Connection timed out after 20009 milliseconds.";
+        let d = classify_ytdlp_stderr(out);
+        assert_eq!(d.code, ErrorCode::Timeout);
+        assert!(d.retryable);
     }
 
     #[test]

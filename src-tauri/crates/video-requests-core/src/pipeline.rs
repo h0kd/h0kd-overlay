@@ -20,6 +20,56 @@ use crate::ffmpeg::{self, Encoder, VideoInfo};
 use crate::kappa;
 use crate::ytdlp::{self, Metadata};
 use std::path::{Path, PathBuf};
+use std::time::Duration;
+
+/// Cuántas veces en total se intenta algo que falla por un motivo pasajero.
+const ATTEMPTS: u32 = 3;
+/// Pausa antes de cada reintento. TikTok contesta vacío de a ratos e Instagram
+/// corta la conexión de a ratos; en los dos casos unos segundos alcanzan.
+const RETRY_DELAYS: [Duration; 2] = [Duration::from_secs(2), Duration::from_secs(5)];
+
+/// Reintenta `op` mientras el error diga `retryable`, hasta `ATTEMPTS` veces.
+///
+/// Existe porque en el primer stream real la mitad de los fallos fueron de
+/// esta clase: un TikTok bueno que "no se pudo leer" y al toque sí, un
+/// Instagram que cortó la conexión a mitad de descarga. Un pedido que falla
+/// queda como fallido para el viewer y para el mod; vale más esperar cinco
+/// segundos que hacerlos mandar el link de nuevo.
+async fn with_retries<T, F, Fut>(op: F) -> Result<T>
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = Result<T>>,
+{
+    retry_with(op, &RETRY_DELAYS).await
+}
+
+async fn retry_with<T, F, Fut>(mut op: F, delays: &[Duration]) -> Result<T>
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = Result<T>>,
+{
+    let mut attempt = 0u32;
+    loop {
+        match op().await {
+            Ok(v) => return Ok(v),
+            Err(e) if e.retryable && attempt + 1 < ATTEMPTS => {
+                let delay = delays
+                    .get(attempt as usize)
+                    .or(delays.last())
+                    .copied()
+                    .unwrap_or(Duration::ZERO);
+                tokio::time::sleep(delay).await;
+                attempt += 1;
+            }
+            Err(mut e) => {
+                if attempt > 0 {
+                    e.message = format!("{} (tras {} intentos)", e.message, attempt + 1);
+                }
+                return Err(e);
+            }
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct PipelineConfig {
@@ -73,7 +123,8 @@ pub async fn fetch_metadata(
         return Ok((platform, meta));
     }
     let cookies = cfg.cookies.as_deref();
-    let meta = ytdlp::fetch_metadata(&bins.ytdlp, url, platform, cookies).await?;
+    let meta =
+        with_retries(|| ytdlp::fetch_metadata(&bins.ytdlp, url, platform, cookies)).await?;
     Ok((platform, meta))
 }
 
@@ -95,16 +146,19 @@ pub async fn prepare(
     // Sufijo con guion, no con punto: el punto lo rechaza la validación de
     // nombres de archivo, y con razón. El archivo final es `<item_id>.mp4`, así
     // que el crudo necesita un nombre distinto que `cleanup` igual encuentre.
-    let raw = ytdlp::download(
-        &bins.ytdlp,
-        url,
-        platform,
-        cfg.cookies.as_deref(),
-        dest_dir,
-        &format!("{item_id}-raw"),
-        cfg.max_long_side,
-        cfg.max_filesize_mb,
-    )
+    let stem = format!("{item_id}-raw");
+    let raw = with_retries(|| {
+        ytdlp::download(
+            &bins.ytdlp,
+            url,
+            platform,
+            cfg.cookies.as_deref(),
+            dest_dir,
+            &stem,
+            cfg.max_long_side,
+            cfg.max_filesize_mb,
+        )
+    })
     .await?;
 
     let info: VideoInfo = match ffmpeg::probe(&bins.ffprobe, &raw).await {
@@ -170,6 +224,55 @@ pub fn cleanup(dest_dir: &Path, item_id: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::error::{ErrorCode, ErrorDetail};
+    use std::sync::atomic::{AtomicU32, Ordering};
+
+    #[tokio::test]
+    async fn reintenta_solo_lo_pasajero_y_hasta_el_tope() {
+        let veces = AtomicU32::new(0);
+        let r: Result<()> = retry_with(
+            || {
+                veces.fetch_add(1, Ordering::SeqCst);
+                async { Err(ErrorDetail::new(ErrorCode::Timeout, "tardó")) }
+            },
+            &[],
+        )
+        .await;
+        assert_eq!(veces.load(Ordering::SeqCst), ATTEMPTS);
+        let e = r.unwrap_err();
+        assert!(e.message.contains("tras 3 intentos"), "{}", e.message);
+
+        // Cookies vencidas no se reintentan: mil intentos dan mil fallos.
+        let veces = AtomicU32::new(0);
+        let r: Result<()> = retry_with(
+            || {
+                veces.fetch_add(1, Ordering::SeqCst);
+                async { Err(ErrorDetail::new(ErrorCode::CookiesExpired, "vencidas")) }
+            },
+            &[],
+        )
+        .await;
+        assert_eq!(veces.load(Ordering::SeqCst), 1);
+        assert_eq!(r.unwrap_err().message, "vencidas");
+
+        // Si el segundo intento anda, se devuelve eso y listo.
+        let veces = AtomicU32::new(0);
+        let r = retry_with(
+            || {
+                let n = veces.fetch_add(1, Ordering::SeqCst);
+                async move {
+                    if n == 0 {
+                        Err(ErrorDetail::transient(ErrorCode::ExtractorFailed, "vacío"))
+                    } else {
+                        Ok(n)
+                    }
+                }
+            },
+            &[],
+        )
+        .await;
+        assert_eq!(r.ok(), Some(1));
+    }
 
     #[test]
     fn cleanup_borra_solo_lo_del_pedido() {

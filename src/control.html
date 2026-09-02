@@ -963,6 +963,11 @@
         <span class="vol-value" id="vrlSizePct">62%</span>
       </div>
       <div class="vr-row">
+        <span class="vr-label">Volumen</span>
+        <input type="range" id="vrlVolume" min="0" max="100" step="5" />
+        <span class="vol-value" id="vrlVolumePct">80%</span>
+      </div>
+      <div class="vr-row">
         <span class="vr-label">Entrada</span>
         <select id="vrlAnimIn"></select>
         <span class="vr-label" style="min-width:0;margin-left:8px">Salida</span>
@@ -1626,6 +1631,8 @@
     return {
       random:  v.position === 'random',
       sizePct: (typeof v.sizePct === 'number') ? Math.max(5, Math.min(100, Math.round(v.sizePct))) : 62,
+      // 0..1 en config.json (como en los canjes); acá se muestra en %.
+      volume:  (typeof v.volume === 'number') ? Math.max(0, Math.min(1, v.volume)) : 0.8,
       x:       (typeof v.x === 'number') ? v.x : cw / 2,
       y:       (typeof v.y === 'number') ? v.y : ch / 2,
       zones:   v.respectSafeZones !== false,
@@ -1687,6 +1694,10 @@
     var s = document.getElementById('vrlSize');
     if (s.value != L.sizePct) s.value = L.sizePct;
     document.getElementById('vrlSizePct').textContent = L.sizePct + '%';
+    var volPct = Math.round(L.volume * 100);
+    var vs = document.getElementById('vrlVolume');
+    if (vs.value != volPct) vs.value = volPct;
+    document.getElementById('vrlVolumePct').textContent = volPct + '%';
     document.getElementById('vrlZones').checked = L.zones;
     document.getElementById('vrlAnimIn').innerHTML  = animOptionsHtml(ANIM_IN_OPTS,  L.animIn);
     document.getElementById('vrlAnimOut').innerHTML = animOptionsHtml(ANIM_OUT_OPTS, L.animOut);
@@ -1705,6 +1716,9 @@
     });
     document.getElementById('vrlSize').addEventListener('input', function() {
       vrlWrite({ sizePct: Math.max(5, Math.min(100, parseInt(this.value) || 5)) });
+    });
+    document.getElementById('vrlVolume').addEventListener('input', function() {
+      vrlWrite({ volume: Math.max(0, Math.min(100, parseInt(this.value) || 0)) / 100 });
     });
     document.getElementById('vrlZones').addEventListener('change', function() {
       vrlWrite({ respectSafeZones: this.checked });

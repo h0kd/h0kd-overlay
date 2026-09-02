@@ -408,13 +408,13 @@ export class ChannelHub implements DurableObject {
 
     if (online) {
       await this.ctx.storage.deleteAlarm();
-      await q.setSubmissionsOpen(this.env.DB, meta.channel_id, true);
+      await q.setStreamState(this.env.DB, meta.channel_id, true);
       await this.sendSettings();
       await this.pushQueueToMods();
       return;
     }
 
-    await q.setSubmissionsOpen(this.env.DB, meta.channel_id, false);
+    await q.setStreamState(this.env.DB, meta.channel_id, false);
     await this.sendSettings();
     await this.ctx.storage.setAlarm(Date.now() + OFFLINE_GRACE_SECONDS * 1000);
   }

@@ -19,6 +19,39 @@ const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(300);
 /// ritmo explícito a Instagram es barato comparado con que banee la cuenta.
 const SLEEP_REQUESTS: &str = "1.5";
 
+/// Clientes alternativos de YouTube.
+///
+/// El cliente que yt-dlp elige por defecto contesta "This video is not
+/// available" para algunos Shorts que en la web se ven perfecto (pasó en
+/// stream con un link bueno). Los clientes android/ios sí los sirven, pero
+/// solo a 360p, así que no pueden ser el camino normal: se prueban recién
+/// cuando el primer intento falló. HD cuando se puede, algo cuando no.
+const YOUTUBE_FALLBACK_ARGS: [&str; 2] = ["--extractor-args", "youtube:player_client=android,ios"];
+
+fn with_youtube_fallback(args: &[String]) -> Vec<String> {
+    let mut a: Vec<String> = YOUTUBE_FALLBACK_ARGS.iter().map(|s| s.to_string()).collect();
+    a.extend(args.iter().cloned());
+    a
+}
+
+/// Corre yt-dlp y, si es YouTube y falló, vuelve a probar con los clientes
+/// alternativos. Si los dos fallan se devuelve el error del PRIMER intento,
+/// que es el que describe el problema de verdad.
+async fn run_ytdlp(
+    ytdlp: &Path,
+    args: &[String],
+    platform: Platform,
+    timeout: Duration,
+    what: &str,
+) -> Result<proc::Output> {
+    let out = proc::run(ytdlp, args, timeout, what).await?;
+    if out.status_ok || platform != Platform::Youtube {
+        return Ok(out);
+    }
+    let retry = proc::run(ytdlp, &with_youtube_fallback(args), timeout, what).await?;
+    Ok(if retry.status_ok { retry } else { out })
+}
+
 #[derive(Debug, Clone)]
 pub struct Metadata {
     pub title: Option<String>,
@@ -83,7 +116,7 @@ pub async fn fetch_metadata(
     args.push("--simulate".to_string());
     args.push(url.to_string());
 
-    let out = proc::run(ytdlp, &args, METADATA_TIMEOUT, "yt-dlp (metadata)").await?;
+    let out = run_ytdlp(ytdlp, &args, platform, METADATA_TIMEOUT, "yt-dlp (metadata)").await?;
     if !out.status_ok {
         return Err(classify_ytdlp_stderr(&out.stderr));
     }
@@ -154,7 +187,7 @@ pub async fn download(
         url.to_string(),
     ]);
 
-    let out = proc::run(ytdlp, &args, DOWNLOAD_TIMEOUT, "yt-dlp (descarga)").await?;
+    let out = run_ytdlp(ytdlp, &args, platform, DOWNLOAD_TIMEOUT, "yt-dlp (descarga)").await?;
     if !out.status_ok {
         return Err(classify_ytdlp_stderr(&out.stderr));
     }
@@ -246,6 +279,15 @@ mod tests {
             assert!(!args.contains(&"--cookies".to_string()), "{p} no debería llevar cookies");
             assert!(!args.iter().any(|a| a.contains("cookies.txt")));
         }
+    }
+
+    #[test]
+    fn el_fallback_de_youtube_va_adelante_y_no_pierde_nada() {
+        let args = vec!["--no-playlist".to_string(), "https://youtube.com/shorts/x".to_string()];
+        let fb = with_youtube_fallback(&args);
+        assert_eq!(fb[0], "--extractor-args");
+        assert!(fb[1].contains("player_client=android,ios"));
+        assert_eq!(&fb[2..], &args[..]);
     }
 
     #[test]

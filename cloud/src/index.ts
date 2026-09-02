@@ -143,7 +143,18 @@ async function withChannel(c: Context<{ Bindings: Env }>, page: () => string) {
 }
 app.get('/submit', (c) => withChannel(c, submitPage));
 app.get('/mod', (c) => withChannel(c, modPage));
-app.get('/admin', (c) => c.html(adminPage()));
+// /admin también es por canal. Sin ?ch=, si quien entra ya tiene su canal
+// dado de alta se lo lleva al suyo; si no, la página pide login y el callback
+// vuelve acá con el canal puesto. Con ?ch= de otro canal, la API contesta 403:
+// ver requireBroadcaster.
+app.get('/admin', async (c) => {
+  if (!c.req.query('ch')) {
+    const session = await getSession(c);
+    const own = session ? await q.channelById(c.env.DB, session.uid) : null;
+    if (own) return c.redirect(`/admin?ch=${encodeURIComponent(own.twitch_login)}`);
+  }
+  return c.html(adminPage());
+});
 
 // ── Diagnóstico ──────────────────────────────────────────────────────────────
 
@@ -224,7 +235,8 @@ app.get('/auth/callback', async (c) => {
 
   // Login de broadcaster: dar de alta el canal, guardar el token para Helix y
   // asegurar las suscripciones de EventSub.
-  if (pending.to.startsWith('/admin')) {
+  let to = pending.to;
+  if (to.startsWith('/admin')) {
     if (!channelAllowed(c.env, user.login)) {
       return c.text('Este canal todavía no está habilitado en el beta.', 403);
     }
@@ -237,9 +249,11 @@ app.get('/auth/callback', async (c) => {
       // lo demás anda. Se reintenta en la próxima visita a /admin.
       console.error('[eventsub] no se pudo suscribir', err);
     }
+    // El admin recién logueado va a SU canal, con el ?ch= en la URL.
+    if (!/[?&]ch=/.test(to)) to = `/admin?ch=${encodeURIComponent(user.login.toLowerCase())}`;
   }
 
-  return c.redirect(pending.to);
+  return c.redirect(to);
 });
 
 app.post('/auth/logout', (c) => {
@@ -269,6 +283,7 @@ app.get('/api/me', async (c) => {
     role: await roleFor(c.env, session, channel.channel_id),
     channel_login: channel.twitch_login,
     submissions_open: settings.submissions_open,
+    stream_online: settings.stream_online,
     allowed_hosts: allowedHosts(),
     max_duration_seconds: settings.max_duration_seconds,
   });
@@ -461,13 +476,30 @@ app.get('/api/history', async (c) => {
 
 // ── API de admin (solo el broadcaster, sobre su propio canal) ────────────────
 
-/** Exige sesión de broadcaster y devuelve su canal. */
+/**
+ * Exige sesión del DUEÑO del canal pedido y devuelve ese canal.
+ *
+ * El canal viene en `?ch=` como en el resto de la API. Que la URL lo diga no
+ * abre nada: el dueño es quien tiene el mismo user id que el canal, y eso sale
+ * de la sesión firmada. Con `?ch=` de otro canal la respuesta es 403, aunque
+ * quien pregunte sea dueño de otro. Sin `?ch=` se asume el canal propio, así
+ * los links viejos siguen andando.
+ */
 async function requireBroadcaster(c: Context<App>) {
   const session = await getSession(c);
   if (!session) return { error: c.json({ error: 'Iniciá sesión con Twitch.' }, 401) };
-  const channel = await q.channelById(c.env.DB, session.uid);
-  if (!channel) {
-    return { error: c.json({ error: 'Entrá a /admin con la cuenta del canal para darlo de alta.' }, 403) };
+  const ch = (c.req.query('ch') ?? '').trim();
+  if (!ch) {
+    const own = await q.channelById(c.env.DB, session.uid);
+    if (!own) {
+      return { error: c.json({ error: 'Entrá a /admin con la cuenta del canal para darlo de alta.' }, 403) };
+    }
+    return { session, channel: own };
+  }
+  const channel = await resolveChannel(c.env, ch);
+  if (!channel) return { error: c.json({ error: 'Ese canal no está dado de alta.' }, 404) };
+  if (channel.channel_id !== session.uid) {
+    return { error: c.json({ error: 'Esta página es solo para el dueño del canal ' + channel.twitch_login + '.' }, 403) };
   }
   return { session, channel };
 }

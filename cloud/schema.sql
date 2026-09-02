@@ -24,6 +24,10 @@ CREATE TABLE IF NOT EXISTS authorized_mods (
 CREATE TABLE IF NOT EXISTS channel_settings (
   channel_id           TEXT PRIMARY KEY,
   submissions_open     INTEGER NOT NULL DEFAULT 0,
+  -- Lo último que dijo EventSub del stream. Va aparte de submissions_open
+  -- porque el interruptor manual de /admin toca solo ese. (Bases anteriores
+  -- al 2026-09-01: aplicar migrations/0001-stream-online.sql.)
+  stream_online        INTEGER NOT NULL DEFAULT 0,
   who_can_submit       TEXT    NOT NULL DEFAULT 'everyone',
   cooldown_seconds     INTEGER NOT NULL DEFAULT 60,
   max_pending_per_user INTEGER NOT NULL DEFAULT 3,

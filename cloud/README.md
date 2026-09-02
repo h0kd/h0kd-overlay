@@ -78,7 +78,8 @@ arriba ya da eso). Los otros dos pueden ser cualquier cadena larga y aleatoria.
 npm run deploy
 ```
 
-Después entrá a `https://TU-WORKER.workers.dev/admin` con la cuenta del canal.
+Después entrá a `https://TU-WORKER.workers.dev/admin` con la cuenta del canal
+(te deja en `/admin?ch=tu-canal`; ese es el link para volver).
 Ese primer login hace tres cosas: da de alta el canal, guarda el token para
 consultar Helix, y suscribe `stream.online` / `stream.offline` al webhook.
 
