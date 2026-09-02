@@ -52,7 +52,8 @@ npm run db:remote                          # aplica schema.sql
 ### 3. Variables y secrets
 
 En `wrangler.toml` completá `TWITCH_CLIENT_ID`, `PUBLIC_ORIGIN` y
-`ALLOWED_CHANNELS` (los logins del beta, separados por coma).
+`ALLOWED_CHANNELS` (los logins del beta, separados por coma). Para sumar un
+canal de punta a punta, ver `docs/alta-de-canal.md`.
 
 Los secrets **no van al repo**:
 
