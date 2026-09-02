@@ -311,6 +311,8 @@
     };
     let ws = null;
     let wsReconnectTimer = null;
+    // `boot` de la app en la primera conexión. Si cambia, la app se reinició.
+    let bootSeen = null;
 
     // ── Setup status badge ────────────────────────────────────────────────────
     // Shows "Conectando…" from load until the first successful connection, then
@@ -512,6 +514,17 @@
         const event = msg.event;
         const data  = msg.data;
         if (!event || !data) return;
+        if (event.source === 'System' && event.type === 'Connected') {
+          // La app se reinició (quizá actualizada): este HTML puede ser viejo.
+          // Recargar trae el overlay que sirve la app de ahora, con su config.
+          if (data.boot && bootSeen && bootSeen !== data.boot) {
+            log('La app se reinició; se recarga el overlay');
+            location.reload();
+            return;
+          }
+          if (data.boot) bootSeen = data.boot;
+          return;
+        }
         if (event.source === 'General' && event.type === 'Custom'
             && data.action === 'playVideo' && data.reward) {
           log(`playVideo: "${data.reward}" por ${data.user || '?'}`);

@@ -22,6 +22,22 @@ pub const SERVER_PORT: u16 = 3002;
 
 static OVERLAY_HTML: &str = include_str!("../../src/overlay.html");
 
+/// Identifica ESTA ejecución de la app. Va en el saludo del WebSocket: si el
+/// overlay ve un valor distinto al de su primera conexión, la app se reinició
+/// (quizá con un build nuevo) y se recarga solo. Sin esto, la fuente de
+/// navegador de OBS seguía corriendo el HTML viejo después de actualizar la
+/// app: se reconectaba por WS, cargaba la config nueva, y la aplicaba con el
+/// código de antes (el volumen de los pedidos, por ejemplo, no cambiaba).
+fn boot_id() -> u64 {
+    static BOOT: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
+    *BOOT.get_or_init(|| {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(1)
+    })
+}
+
 pub async fn start(state: AppState) -> std::io::Result<()> {
     let videos_dir = state.data_dir.join("videos");
     let health = state.server_health.clone();
@@ -95,7 +111,7 @@ async fn handle_ws(
     // Send Connected event (matches original protocol)
     let hello = json!({
         "event": { "source": "System", "type": "Connected" },
-        "data": { "clients": tx.receiver_count() }
+        "data": { "clients": tx.receiver_count(), "boot": boot_id() }
     })
     .to_string();
     let _ = sink.send(Message::Text(hello)).await;
