@@ -631,6 +631,7 @@ async fn session(
                 if state.tx.receiver_count() == 0 {
                     if let Some(item_id) = playback.now_playing.take() {
                         logln!("[VideoRequests] el overlay se fue con {item_id} en pantalla");
+                        state.preview.end(&item_id);
                         let msg = envelope(
                             "playback.ended",
                             json!({ "item_id": item_id, "reason": "error", "played_seconds": 0 }),
@@ -656,6 +657,9 @@ async fn session(
                     let clients = state.tx.send(msg.to_string()).unwrap_or(0);
                     if clients > 0 {
                         logln!("[VideoRequests] → overlay {}", item.item_id);
+                        // Espejo para la ventana de preview, solo si de verdad
+                        // fue a un overlay.
+                        state.preview.play(&msg["data"]);
                     }
                     if clients == 0 {
                         // Sin overlay conectado no se puede reproducir: vuelve

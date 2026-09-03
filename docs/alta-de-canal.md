@@ -53,6 +53,10 @@ cada canal comparte sus links con `?ch=<login>` (están en su `/admin`).
    puerto 3002.
 7. **En pantalla** (misma pestaña): posición, tamaño y volumen de los
    pedidos. Se aplica con Guardar.
+8. **Ventana de preview (para VRChat)**, opcional: una ventana aparte de la
+   app que muestra los pedidos sin sonido mientras salen en OBS. Se marca en
+   la misma pestaña y actúa al instante; en VRChat se captura esa ventana
+   con XSOverlay. Cerrarla con la X la desmarca.
 
 Cookies de Instagram: no hacen falta para arrancar. Solo si los reels
 empiezan a fallar por login (la app muestra "VENCIDAS" o "sin cargar").

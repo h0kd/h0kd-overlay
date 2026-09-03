@@ -32,6 +32,9 @@ pub struct AppState {
     /// config) is deliberate — it makes "off = identical to stable"
     /// verifiable by reading `run()`.
     pub video_requests_enabled: bool,
+    /// Espejo mudo de lo que reproduce el overlay, para la ventana de
+    /// preview (VRChat). Existe siempre; sin el flag nunca recibe nada.
+    pub preview: server::PreviewHub,
 }
 
 /// Reported to the UI so it can warn when the local server didn't start.
@@ -361,6 +364,95 @@ fn vr_open_cookies_dir(state: tauri::State<AppState>) -> Result<(), String> {
     open::that(&dir).map_err(|e| e.to_string())
 }
 
+// ── Ventana de preview (Video Requests, para VRChat) ─────────────────────────
+// Una segunda ventana de la app que muestra, sin sonido, el pedido que el
+// overlay de OBS está reproduciendo. XSOverlay (o cualquier overlay de
+// escritorio) la captura y el streamer lo ve en grande dentro de VRChat.
+// Es opcional: la preferencia vive en su propio archivo, aparte de
+// config.json, para no meterse en el guardar/deshacer del panel.
+
+const PREVIEW_LABEL: &str = "vr-preview";
+
+fn preview_pref_path(data_dir: &Path) -> PathBuf {
+    data_dir.join("video-requests").join("preview-window.json")
+}
+
+fn read_preview_pref(data_dir: &Path) -> bool {
+    std::fs::read_to_string(preview_pref_path(data_dir))
+        .ok()
+        .and_then(|s| serde_json::from_str::<Value>(&s).ok())
+        .and_then(|v| v["open"].as_bool())
+        .unwrap_or(false)
+}
+
+fn write_preview_pref(data_dir: &Path, open: bool) {
+    let path = preview_pref_path(data_dir);
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    let _ = std::fs::write(path, json!({ "open": open }).to_string());
+}
+
+fn open_preview_window(app: &tauri::AppHandle, data_dir: &Path) -> Result<(), String> {
+    use tauri::Manager;
+    if let Some(w) = app.get_webview_window(PREVIEW_LABEL) {
+        let _ = w.unminimize();
+        let _ = w.show();
+        let _ = w.set_focus();
+        return Ok(());
+    }
+    let window = tauri::WebviewWindowBuilder::new(
+        app,
+        PREVIEW_LABEL,
+        tauri::WebviewUrl::App("preview.html".into()),
+    )
+    .title("Video Requests — Preview")
+    .inner_size(960.0, 540.0)
+    .min_inner_size(320.0, 180.0)
+    .build()
+    .map_err(|e| e.to_string())?;
+
+    // Cerrarla con la X la desactiva: si no, reaparecería en el próximo
+    // inicio y no habría forma de sacársela de encima desde la ventana.
+    let dir = data_dir.to_path_buf();
+    let handle = app.clone();
+    window.on_window_event(move |ev| {
+        if let tauri::WindowEvent::CloseRequested { .. } = ev {
+            use tauri::Emitter;
+            write_preview_pref(&dir, false);
+            let _ = handle.emit_to("control", "vr-preview", false);
+        }
+    });
+    Ok(())
+}
+
+/// Abre o cierra la ventana de preview y recuerda la elección.
+#[tauri::command]
+fn vr_preview_window(
+    app: tauri::AppHandle,
+    state: tauri::State<AppState>,
+    open: bool,
+) -> Result<bool, String> {
+    use tauri::Manager;
+    if !state.video_requests_enabled {
+        return Err("Video Requests no está activo en este proceso.".into());
+    }
+    write_preview_pref(&state.data_dir, open);
+    if open {
+        open_preview_window(&app, &state.data_dir)?;
+    } else if let Some(w) = app.get_webview_window(PREVIEW_LABEL) {
+        let _ = w.close();
+    }
+    Ok(open)
+}
+
+/// ¿Está abierta ahora? Es lo que el panel muestra en el switch.
+#[tauri::command]
+fn vr_preview_open(app: tauri::AppHandle) -> bool {
+    use tauri::Manager;
+    app.get_webview_window(PREVIEW_LABEL).is_some()
+}
+
 // ── Auto-update (tauri-plugin-updater) ───────────────────────────────────────
 
 #[derive(serde::Serialize)]
@@ -468,6 +560,7 @@ pub fn run() {
         vr_cmd,
         video_requests: vr_shared,
         video_requests_enabled,
+        preview: server::PreviewHub::new(),
     };
 
     tauri::Builder::default()
@@ -484,7 +577,28 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(state.clone())
-        .setup(move |_| {
+        .setup(move |app| {
+            // Cerrar el panel cierra la app entera. La preview se DESTRUYE
+            // (sin CloseRequested): así cerrar la app no desmarca la opción y
+            // la ventana vuelve a abrirse en el próximo inicio.
+            {
+                use tauri::Manager;
+                let handle = app.handle().clone();
+                if let Some(control) = app.get_webview_window("control") {
+                    control.on_window_event(move |ev| {
+                        if let tauri::WindowEvent::CloseRequested { .. } = ev {
+                            if let Some(p) = handle.get_webview_window(PREVIEW_LABEL) {
+                                let _ = p.destroy();
+                            }
+                        }
+                    });
+                }
+                if state.video_requests_enabled && read_preview_pref(&state.data_dir) {
+                    if let Err(e) = open_preview_window(app.handle(), &state.data_dir) {
+                        logln!("[Preview] No se pudo abrir la ventana: {}", e);
+                    }
+                }
+            }
             let server_state = state.clone();
             let health = server_state.server_health.clone();
             tauri::async_runtime::spawn(async move {
@@ -533,6 +647,8 @@ pub fn run() {
             vr_update_ytdlp,
             vr_reconnect,
             vr_open_cookies_dir,
+            vr_preview_window,
+            vr_preview_open,
             open_logs_dir,
             twitch_status,
             twitch_set_client_id,

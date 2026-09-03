@@ -982,6 +982,24 @@
         horizontal al mismo % se ven del mismo tamaño. Se aplica al guardar.
       </p>
     </div>
+
+    <div class="vr-card" id="vrPreviewCard">
+      <div class="vr-card-head">
+        <label class="vr-toggle" style="margin:0">
+          <input type="checkbox" id="vrlPreview" />
+          <span>Ventana de preview (para VRChat)</span>
+        </label>
+      </div>
+      <p class="vr-lead" style="margin-top:8px">
+        Abre una ventana aparte de la app donde se ven los pedidos <b>sin sonido</b>,
+        a la vez que salen en OBS. En VRChat, capturá esa ventana con XSOverlay (o el
+        overlay de escritorio que uses) para verlos en grande.
+      </p>
+      <p class="vr-note" id="vrlPreviewNote">
+        Se aplica al instante, no hace falta guardar. Mientras esté marcada, la ventana
+        se abre sola al iniciar la app; cerrarla con la X la desmarca.
+      </p>
+    </div>
   </section>
 </main>
 
@@ -1147,6 +1165,7 @@
     });
     // El estado del módulo solo se consulta si está corriendo en este proceso.
     if (vrActive) { pollVr(); setInterval(pollVr, 2000); }
+    wireVrPreview();
     document.getElementById('vrEnabled').addEventListener('change', function() {
       cfg.videoRequests = cfg.videoRequests || {};
       cfg.videoRequests.enabled = this.checked;
@@ -1879,6 +1898,32 @@
     // El preview de posición se mide con el ancho real del lienzo, que es 0
     // mientras la vista está oculta: se redibuja recién al mostrarla.
     if (!isOverlay) renderVrLayout();
+  }
+
+  // ── Video Requests: ventana de preview (VRChat) ───────────────────────────
+  // Va aparte del guardar/deshacer: el switch actúa al instante y la
+  // preferencia la recuerda la app en su propio archivo. Cerrar la ventana
+  // con la X avisa por evento y acá se desmarca.
+  function wireVrPreview() {
+    var box  = document.getElementById('vrlPreview');
+    var note = document.getElementById('vrlPreviewNote');
+    if (!vrActive) {
+      box.disabled = true;
+      note.textContent = 'Disponible cuando el módulo esté corriendo (activalo arriba, guardá y reiniciá la app).';
+      return;
+    }
+    invoke('vr_preview_open').then(function(open) { box.checked = !!open; }).catch(function(){});
+    box.addEventListener('change', function() {
+      var want = this.checked;
+      invoke('vr_preview_window', { open: want }).catch(function(e) {
+        box.checked = !want;
+        alert('No se pudo ' + (want ? 'abrir' : 'cerrar') + ' la ventana de preview: ' + e);
+      });
+    });
+    var ev = window.__TAURI__ && window.__TAURI__.event;
+    if (ev && ev.listen) {
+      ev.listen('vr-preview', function(e) { box.checked = !!e.payload; }).catch(function(){});
+    }
   }
 
   // The flag is read once at startup, so turning it on/off only takes

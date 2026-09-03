@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <title>Video Requests — Preview</title>
+  <style>
+    /* Ventana aparte de la app: espejo SIN SONIDO de lo que el overlay está
+       reproduciendo. Existe para VRChat: XSOverlay (o cualquier overlay de
+       escritorio) captura esta ventana y el streamer ve el pedido en grande
+       sin sacar el overlay de OBS. Nunca manda nada al servidor: el que
+       arbitra la cola es el overlay de OBS, no esta ventana. */
+    html, body { height: 100%; margin: 0; background: #000; color: #efeff1;
+                 font-family: system-ui, -apple-system, "Segoe UI", sans-serif; overflow: hidden; }
+    #stage { position: absolute; inset: 0; }
+    video  { width: 100%; height: 100%; object-fit: contain; display: block; background: #000; }
+
+    #caption {
+      position: absolute; left: 0; right: 0; bottom: 0;
+      padding: 28px 20px 14px;
+      background: linear-gradient(transparent, rgba(0, 0, 0, .75));
+      font-size: 15px; line-height: 1.4;
+      opacity: 0; transition: opacity .4s ease;
+      pointer-events: none;
+    }
+    #caption.show { opacity: 1; }
+    #caption b { color: #bf94ff; font-weight: 600; }
+    #caption span { display: block; color: #d0d0d4; font-size: 13px;
+                    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    #idle {
+      position: absolute; inset: 0; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 10px;
+      color: #6b6b73; font-size: 15px; letter-spacing: .01em;
+    }
+    #idle.hide { display: none; }
+    #idle .dot { width: 9px; height: 9px; border-radius: 50%; background: #444; }
+    #idle .dot.on { background: #00c853; }
+    #idle small { font-size: 12px; color: #55555c; }
+    #muteTag {
+      position: absolute; top: 10px; right: 12px;
+      font-size: 10px; letter-spacing: .06em; text-transform: uppercase;
+      color: rgba(255, 255, 255, .35); pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="stage"></div>
+  <div id="caption"><b id="capUser"></b><span id="capTitle"></span></div>
+  <div id="idle">
+    <div class="dot" id="dot"></div>
+    <div id="idleText">Conectando con la app…</div>
+    <small>Sin sonido. El audio sale por el overlay de OBS.</small>
+  </div>
+  <div id="muteTag">preview · muted</div>
+
+  <script>
+    (function () {
+      'use strict';
+
+      const RECONNECT_MS = 2000;
+      let base = 'http://127.0.0.1:3002';
+      let ws = null;
+      let current = null;   // itemId en pantalla, o null
+
+      const stage   = document.getElementById('stage');
+      const caption = document.getElementById('caption');
+      const idle    = document.getElementById('idle');
+      const dot     = document.getElementById('dot');
+      const idleTxt = document.getElementById('idleText');
+
+      function setIdle(text, connected) {
+        idleTxt.textContent = text;
+        dot.classList.toggle('on', !!connected);
+      }
+
+      function clear() {
+        current = null;
+        stage.textContent = '';
+        caption.classList.remove('show');
+        idle.classList.remove('hide');
+      }
+
+      // `elapsed` viene en el saludo cuando la ventana se abre con un pedido
+      // ya en pantalla: se arranca desde ahí en vez de desde cero.
+      function play(item, elapsed) {
+        if (!item || !item.itemId || !item.src) return;
+        if (current === item.itemId) return;
+        clear();
+        current = item.itemId;
+
+        const video = document.createElement('video');
+        video.muted = true;         // siempre: el sonido lo pone el overlay
+        video.defaultMuted = true;
+        video.autoplay = true;
+        video.playsInline = true;
+        video.src = base + '/' + String(item.src).replace(/^\/+/, '');
+
+        video.addEventListener('loadedmetadata', function () {
+          if (elapsed > 0 && isFinite(video.duration) && elapsed < video.duration) {
+            try { video.currentTime = elapsed; } catch (_) {}
+          }
+        });
+        video.addEventListener('ended', function () { if (current === item.itemId) clear(); });
+        video.addEventListener('error', function () { if (current === item.itemId) clear(); });
+
+        stage.appendChild(video);
+        idle.classList.add('hide');
+        const p = video.play();
+        if (p && p.catch) p.catch(function () { /* muted: no debería bloquearse */ });
+
+        document.getElementById('capUser').textContent  = item.submitter ? item.submitter : '';
+        document.getElementById('capTitle').textContent = item.title || '';
+        caption.classList.toggle('show', !!(item.submitter || item.title));
+      }
+
+      function connect() {
+        if (ws) { ws.onclose = ws.onerror = null; try { ws.close(); } catch (_) {} }
+        ws = new WebSocket(base.replace(/^http/, 'ws') + '/preview');
+
+        ws.onopen = function () { setIdle('Esperando el próximo pedido', true); };
+        ws.onmessage = function (ev) {
+          let msg;
+          try { msg = JSON.parse(ev.data); } catch (_) { return; }
+          if (msg.type === 'hello') {
+            if (msg.now) play(msg.now, Number(msg.now.elapsed) || 0);
+            else clear();
+          } else if (msg.type === 'play') {
+            play(msg.item, 0);
+          } else if (msg.type === 'end') {
+            if (!msg.itemId || msg.itemId === current) clear();
+          }
+        };
+        ws.onclose = function () {
+          clear();
+          setIdle('Sin conexión con la app; reintentando…', false);
+          setTimeout(connect, RECONNECT_MS);
+        };
+        ws.onerror = function () { /* onclose reconecta */ };
+      }
+
+      (async function () {
+        // El puerto lo sabe la app (SERVER_PORT). Abierta en un navegador
+        // suelto no hay IPC y queda el valor de fábrica.
+        try {
+          const t = window.__TAURI__;
+          if (t && t.core && t.core.invoke) base = await t.core.invoke('server_url');
+        } catch (_) {}
+        connect();
+      })();
+    })();
+  </script>
+</body>
+</html>
