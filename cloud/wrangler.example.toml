@@ -25,6 +25,12 @@ preview_urls = false
 #   { pattern = "videos.tu-dominio.dev", custom_domain = true },
 # ]
 
+# ── Assets estáticos (favicon) ───────────────────────────────────────────────
+# Lo que hay en public/ se sirve tal cual, con caché de Cloudflare, antes de
+# que corra el Worker. Hoy: el favicon con el OC de h0kd.
+[assets]
+directory = "./public"
+
 # ── D1: fuente de verdad de cola, mods y settings ────────────────────────────
 [[d1_databases]]
 binding = "DB"
