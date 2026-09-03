@@ -6,6 +6,10 @@ name: Release
 # point: the experimental app must never publish over the stable release
 # the auto-updater reads.
 #
+# The build lands as a DRAFT pre-release. Publishing it by hand triggers
+# promote-exp-latest.yml, which points the rolling `exp-latest` release
+# (the url the experimental auto-updater reads) at the new version.
+#
 # When this branch merges back, restore the `v*` trigger and the stable
 # release name — otherwise stable releases stop building.
 
