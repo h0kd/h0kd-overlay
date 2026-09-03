@@ -425,56 +425,36 @@ const CSS = `
   .profile-stats { display: flex; gap: 22px; margin-left: auto; text-align: right; }
   .profile-stats .ps b { font-size: 20px; font-family: "Bricolage Grotesque", sans-serif; display: block; line-height: 1.1; }
   .profile-stats .ps span { font-size: 12px; color: var(--faint); text-transform: uppercase; letter-spacing: .06em; }
-  /* ---------- toast ---------- */
-  .toast {
-    position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%) translateY(8px);
-    background: var(--surface-3); color: var(--text);
-    border: 1px solid var(--border); border-radius: 12px;
-    padding: 12px 18px; font-size: 14.5px; font-weight: 500;
-    box-shadow: var(--shadow); opacity: 0; pointer-events: none;
-    transition: opacity .25s ease, transform .25s ease;
-    display: flex; align-items: center; gap: 10px; z-index: 50;
-  }
-  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
-  .toast .ok-dot { color: var(--ok); }
-  /* ---------- avisos (notificaciones con sonido) ----------
-     Suben desde la esquina inferior derecha y se van solos. El sonido y la
-     campana de arriba se silencian juntos; la elección queda en el navegador. */
+  /* ---------- avisos ----------
+     Todos los avisos de la página (el "tu link entró", los que suenan) salen
+     por acá: la misma píldora abajo al centro, apilados si coinciden. Los
+     que llevan sonido se silencian con la campana de la barra; la elección
+     queda en el navegador. */
   .notif-stack {
-    position: fixed; right: 20px; bottom: 20px; z-index: 60;
-    display: flex; flex-direction: column; gap: 10px; align-items: flex-end;
-    pointer-events: none;
+    position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%); z-index: 60;
+    display: flex; flex-direction: column; gap: 8px; align-items: center;
+    pointer-events: none; max-width: calc(100vw - 32px);
   }
   .notif {
     pointer-events: auto; cursor: pointer;
-    display: flex; align-items: center; gap: 12px;
-    min-width: 260px; max-width: min(380px, calc(100vw - 40px));
-    padding: 12px 14px;
+    display: flex; align-items: center; gap: 8px; max-width: 100%;
     background: var(--surface-3); color: var(--text);
-    border: 1px solid var(--border); border-left: 3px solid var(--accent);
-    border-radius: 12px; box-shadow: var(--shadow);
-    animation: notifIn .38s cubic-bezier(.2, .9, .3, 1.2) both;
+    border: 1px solid var(--border); border-radius: 12px;
+    padding: 12px 18px; font-size: 14.5px; font-weight: 500;
+    box-shadow: var(--shadow);
+    animation: notifIn .25s ease both;
   }
-  .notif.bye { animation: notifOut .25s ease-in forwards; }
-  .notif .notif-ic {
-    flex: none; width: 34px; height: 34px; border-radius: 9px;
-    display: grid; place-items: center;
-    background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent);
-  }
-  .notif .notif-body { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-  .notif b { font-size: 14.5px; }
-  .notif span { font-size: 13px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  @keyframes notifIn  { from { opacity: 0; transform: translateY(28px) scale(.96); } to { opacity: 1; transform: none; } }
-  @keyframes notifOut { to { opacity: 0; transform: translateY(12px); } }
+  .notif.bye { animation: notifOut .25s ease forwards; }
+  .notif b { font-weight: 600; white-space: nowrap; }
+  .notif span { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .notif .ok-dot { color: var(--ok); }
+  @keyframes notifIn  { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+  @keyframes notifOut { to { opacity: 0; transform: translateY(8px); } }
   .bell { position: relative; }
   .bell.off { color: var(--faint); }
   .bell.off::after {
     content: ''; position: absolute; left: 50%; top: 50%; width: 20px; height: 2px;
     background: currentColor; transform: translate(-50%, -50%) rotate(-45deg); border-radius: 2px;
-  }
-  @media (max-width: 720px) {
-    .notif-stack { right: 12px; left: 12px; bottom: 12px; align-items: stretch; }
-    .notif { max-width: none; }
   }
   footer.proto-note {
     max-width: 1060px; margin: 0 auto; padding: 0 24px 40px;
@@ -599,7 +579,6 @@ ${ICONS}
   </div>
 </header>
 <main>${body}</main>
-<div class="toast" id="toast"></div>
 <div class="notif-stack" id="notifStack" aria-live="polite"></div>
 <script>${SHARED_JS}${script}</script>
 </body></html>`;
@@ -783,13 +762,9 @@ function miniatura(it, ancha, href) {
   return box;
 }
 
-function toast(msg) {
-  const t = $('#toast');
-  t.textContent = msg;
-  t.classList.add('show');
-  clearTimeout(toast._t);
-  toast._t = setTimeout(function () { t.classList.remove('show'); }, 3200);
-}
+// Aviso sin sonido ("Tu link entró a la cola", "Guardado."). Misma píldora y
+// misma pila que los avisos con sonido: ver pushAviso más abajo.
+function toast(msg) { pushAviso(msg, null); }
 
 // ── Avisos con sonido ────────────────────────────────────────────────────────
 // notify(titulo, detalle) sube una tarjeta desde abajo a la derecha y suena.
@@ -828,23 +803,22 @@ function paintBell() {
   b.classList.toggle('off', notifMuted);
   b.title = notifMuted ? 'Avisos silenciados (click para activar)' : 'Avisos con sonido (click para silenciar)';
 }
-function notify(titulo, detalle) {
-  if (notifMuted) return;
+// Una píldora más en la pila de abajo. El título va en negrita y el detalle,
+// si hay, a continuación en gris. Se va sola o al click.
+function pushAviso(titulo, detalle) {
   const stack = $('#notifStack');
   const card = el('div', 'notif');
-  const ic = el('div', 'notif-ic');
-  const svg = document.createElementNS(SVGNS, 'svg');
-  svg.setAttribute('width', 18); svg.setAttribute('height', 18);
-  const use = document.createElementNS(SVGNS, 'use'); use.setAttribute('href', '#ic-bell');
-  svg.appendChild(use); ic.appendChild(svg);
-  const body = el('div', 'notif-body');
-  body.appendChild(el('b', null, titulo));
-  if (detalle) body.appendChild(el('span', null, detalle));
-  card.appendChild(ic); card.appendChild(body);
+  card.appendChild(el('b', null, titulo));
+  if (detalle) card.appendChild(el('span', null, detalle));
   function bye() { card.classList.add('bye'); setTimeout(function () { card.remove(); }, 260); }
   card.onclick = bye;
   stack.appendChild(card);
-  setTimeout(bye, 7000);
+  setTimeout(bye, 3200);
+  return card;
+}
+function notify(titulo, detalle) {
+  if (notifMuted) return;
+  pushAviso(titulo, detalle);
   chime();
 }
 // Para mods y admin: avisa cuando entra algo nuevo a revisar. El primer
