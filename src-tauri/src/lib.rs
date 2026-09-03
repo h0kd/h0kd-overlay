@@ -427,10 +427,15 @@ fn open_preview_window(app: &tauri::AppHandle, data_dir: &Path) -> Result<(), St
 }
 
 /// Abre o cierra la ventana de preview y recuerda la elección.
+///
+/// Es `async` a propósito: en Windows, crear una ventana desde un comando
+/// síncrono corre en el hilo principal y se traba esperando al event loop
+/// (la ventana aparece vacía, congelada y sin poder cerrarse). Con el
+/// comando en el runtime async, la creación se despacha bien.
 #[tauri::command]
-fn vr_preview_window(
+async fn vr_preview_window(
     app: tauri::AppHandle,
-    state: tauri::State<AppState>,
+    state: tauri::State<'_, AppState>,
     open: bool,
 ) -> Result<bool, String> {
     use tauri::Manager;
