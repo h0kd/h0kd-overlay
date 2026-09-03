@@ -213,22 +213,42 @@
 
   /* ── Video Requests (experimental) ── */
   main.view-vr { grid-template-columns: 1fr; }
-  #vrView { overflow-y: auto; padding: 28px 32px; }
+  #vrView { overflow-y: auto; padding: 22px 28px; }
   #vrView h2 { font-size: 18px; display: flex; align-items: center; gap: 10px; }
   .vr-lead {
     color: var(--muted); font-size: 13px; line-height: 1.6;
     margin-top: 10px; max-width: 640px;
   }
+  /* Dos columnas para no tener que scrollear: a la izquierda las tarjetas de
+     estado y opciones (módulo, emparejar, entorno, preview) y a la derecha
+     "En pantalla", que es la grande. Con la ventana angosta vuelve a una. */
+  .vr-grid {
+    display: grid; grid-template-columns: minmax(240px, 268px) minmax(240px, 268px) minmax(0, 1fr);
+    gap: 16px; align-items: start; margin-top: 16px; max-width: 1180px;
+  }
+  .vr-col { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+  /* Angosta: estado y entorno arriba, "En pantalla" abajo a todo el ancho. */
+  @media (max-width: 1150px) {
+    .vr-grid { grid-template-columns: 1fr 1fr; }
+    .vr-grid > .vr-col:nth-child(3) { grid-column: 1 / -1; }
+  }
+  @media (max-width: 900px) { .vr-grid { grid-template-columns: 1fr; } }
   .vr-card {
     background: var(--s1); border: 1px solid var(--border);
-    border-radius: 10px; padding: 16px 18px; margin-top: 20px; max-width: 640px;
+    border-radius: 10px; padding: 16px 18px;
   }
   .vr-card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
   .vr-card h3 { font-size: 13px; margin-bottom: 10px; }
   .vr-card ul { margin: 0 0 4px 18px; color: var(--muted); font-size: 12.5px; line-height: 1.9; }
   .vr-card code { background: var(--s2); padding: 1px 5px; border-radius: 4px; font-size: 11.5px; }
   .vr-foot { color: var(--muted); font-size: 12px; margin-top: 12px; }
-  .vr-row { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+  .vr-row { display: flex; align-items: center; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
+  .vr-row .vr-btn { white-space: nowrap; }
+  .vr-row-2 .vol-value { min-width: 36px; }
+  /* En "En pantalla" las filas son sliders y selects: no se envuelven. */
+  #vrLayoutCard .vr-row { flex-wrap: nowrap; }
+  #vrLayoutCard .vr-label { min-width: 0; white-space: nowrap; }
+  #vrLayoutCard select { min-width: 0; flex: 1; }
   .vr-row input[type=text] {
     flex: 1; background: var(--s2); border: 1px solid var(--border); color: var(--text);
     border-radius: 6px; padding: 9px 11px; font: inherit; letter-spacing: .1em;
@@ -241,7 +261,7 @@
   }
   .vr-btn:hover:not(:disabled) { background: var(--accentH); }
   .vr-btn:disabled { opacity: .45; cursor: default; }
-  .vr-btn.secondary { background: var(--s2); border: 1px solid var(--border); color: var(--text); }
+  .vr-btn.secondary { background: var(--s2); border: 1px solid var(--border); color: var(--text); padding: 8px 12px; font-size: 12.5px; }
   .vr-kv { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0;
     border-top: 1px solid var(--border); font-size: 12.5px; }
   .vr-kv:first-of-type { border-top: none; }
@@ -297,7 +317,7 @@
     background: var(--s2); border: 1px solid var(--border); color: var(--text);
     border-radius: 6px; padding: 7px 9px; font: inherit; font-size: 12.5px;
   }
-  .vr-card input[type=range] { flex: 1; }
+  .vr-card input[type=range] { flex: 1; min-width: 0; }
 
   /* ── Editor panel ── */
   #editor {
@@ -883,12 +903,13 @@
 
   <section id="vrView" style="display:none">
     <h2>Video Requests <span class="exp-tag">experimental</span></h2>
-    <p class="vr-lead">
-      Los viewers mandan links, los mods aprueban desde la web, y lo aprobado se descarga,
-      se valida y se reproduce en el overlay. Es un módulo aparte del sistema de canjes:
-      se prende y apaga acá, y con el módulo apagado la pestaña <b>Overlay</b> funciona
-      exactamente igual que en la versión estable.
+    <p class="vr-lead" style="max-width:none;margin-top:6px">
+      Los viewers mandan links, los mods aprueban desde la web y lo aprobado sale en el overlay.
+      Apagado, la pestaña <b>Overlay</b> funciona igual que en la estable.
     </p>
+
+    <div class="vr-grid">
+    <div class="vr-col">
 
     <div class="vr-card">
       <div class="vr-card-head">
@@ -920,6 +941,25 @@
       <div class="vr-err" id="vrError" style="display:none"></div>
     </div>
 
+    <div class="vr-card" id="vrPreviewCard">
+      <div class="vr-card-head">
+        <label class="vr-toggle" style="margin:0">
+          <input type="checkbox" id="vrlPreview" />
+          <span>Ventana de preview (para VRChat)</span>
+        </label>
+      </div>
+      <p class="vr-lead" style="margin-top:8px">
+        Una ventana aparte con los pedidos <b>sin sonido</b>, a la vez que salen en OBS.
+        En VRChat, capturala con XSOverlay para verlos en grande.
+      </p>
+      <p class="vr-note" id="vrlPreviewNote">
+        Al instante, sin guardar. Se abre sola al iniciar la app; cerrarla con la X la desmarca.
+      </p>
+    </div>
+
+    </div>
+    <div class="vr-col">
+
     <div class="vr-card" id="vrEnvCard" style="display:none">
       <h3>Entorno</h3>
       <div class="vr-kv"><span>yt-dlp</span><span id="vrYtdlp">—</span></div>
@@ -932,16 +972,18 @@
         <button class="vr-btn secondary" id="vrCookiesBtn">Abrir carpeta de cookies</button>
       </div>
       <p class="vr-foot">
-        Instagram necesita las cookies de una cuenta <b>dedicada</b> (nunca la personal),
-        exportadas en formato Netscape como <code>instagram-cookies.txt</code>.
+        Instagram: cookies de una cuenta <b>dedicada</b> (nunca la personal), en formato
+        Netscape, como <code>instagram-cookies.txt</code>.
       </p>
     </div>
+
+    </div>
+    <div class="vr-col">
 
     <div class="vr-card" id="vrLayoutCard">
       <h3>En pantalla</h3>
       <p class="vr-lead" style="margin-top:0">
-        Dónde y de qué tamaño salen los videos pedidos. Es aparte de los canjes, que
-        tienen su propia configuración por reward.
+        Dónde y de qué tamaño salen los pedidos. Aparte de los canjes, que se configuran por reward.
       </p>
       <div class="vr-row">
         <span class="vr-label">Posición</span>
@@ -957,13 +999,11 @@
       </div>
       <div class="vr-stage" id="vrlStage"><div class="box" id="vrlBox"></div></div>
       <div class="size-readout" id="vrlReadout"></div>
-      <div class="vr-row">
+      <div class="vr-row vr-row-2">
         <span class="vr-label">Tamaño</span>
         <input type="range" id="vrlSize" min="5" max="100" step="1" />
         <span class="vol-value" id="vrlSizePct">62%</span>
-      </div>
-      <div class="vr-row">
-        <span class="vr-label">Volumen</span>
+        <span class="vr-label" style="min-width:0;margin-left:14px">Volumen</span>
         <input type="range" id="vrlVolume" min="0" max="100" step="5" />
         <span class="vol-value" id="vrlVolumePct">80%</span>
       </div>
@@ -987,22 +1027,7 @@
       </p>
     </div>
 
-    <div class="vr-card" id="vrPreviewCard">
-      <div class="vr-card-head">
-        <label class="vr-toggle" style="margin:0">
-          <input type="checkbox" id="vrlPreview" />
-          <span>Ventana de preview (para VRChat)</span>
-        </label>
-      </div>
-      <p class="vr-lead" style="margin-top:8px">
-        Abre una ventana aparte de la app donde se ven los pedidos <b>sin sonido</b>,
-        a la vez que salen en OBS. En VRChat, capturá esa ventana con XSOverlay (o el
-        overlay de escritorio que uses) para verlos en grande.
-      </p>
-      <p class="vr-note" id="vrlPreviewNote">
-        Se aplica al instante, no hace falta guardar. Mientras esté marcada, la ventana
-        se abre sola al iniciar la app; cerrarla con la X la desmarca.
-      </p>
+    </div>
     </div>
   </section>
 </main>
