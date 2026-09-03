@@ -43,7 +43,7 @@ CREATE TABLE IF NOT EXISTS queue_items (
   submitter_twitch_id TEXT NOT NULL,
   submitter_login     TEXT NOT NULL,
   source_url          TEXT NOT NULL,
-  platform            TEXT NOT NULL,     -- instagram | twitch | youtube
+  platform            TEXT NOT NULL,     -- instagram | tiktok | twitch | youtube | kappa | x
   status              TEXT NOT NULL,
   title               TEXT,
   thumbnail_url       TEXT,

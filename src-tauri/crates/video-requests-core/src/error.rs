@@ -112,6 +112,17 @@ pub fn classify_ytdlp_stderr(stderr: &str) -> ErrorDetail {
             "Ese link es una foto o un post sin video. Solo se aceptan Reels.",
         );
     }
+    // Un post de X sin video. "No suitable extractor" es el mismo caso con
+    // un link adentro: el extractor de X quiso seguirlo y los extractores
+    // acotados (ver ytdlp::base_args) no lo dejaron. Tampoco es un fallo.
+    if s.contains("no video could be found in this tweet")
+        || s.contains("no suitable extractor found")
+    {
+        return ErrorDetail::new(
+            ErrorCode::NotFound,
+            "Ese post de X no tiene video. Solo se aceptan posts con video.",
+        );
+    }
     // TikTok devuelve de a ratos una página sin los datos que el extractor
     // busca. Al siguiente intento suele andar: reintentable, no roto.
     if s.contains("universal data for rehydration")
@@ -238,6 +249,19 @@ mod tests {
         assert_eq!(d.code, ErrorCode::NotFound);
         assert!(!d.retryable);
         assert!(d.message.contains("Reels"));
+    }
+
+    #[test]
+    fn post_de_x_sin_video_no_es_extractor_roto() {
+        for out in [
+            "ERROR: [twitter] 1834334523344568597: No video could be found in this tweet",
+            "ERROR: No suitable extractor found for URL https://go.nasa.gov/4aGEGua",
+        ] {
+            let d = classify_ytdlp_stderr(out);
+            assert_eq!(d.code, ErrorCode::NotFound, "{out}");
+            assert!(!d.retryable);
+            assert!(d.message.contains("X"));
+        }
     }
 
     #[test]

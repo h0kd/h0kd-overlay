@@ -111,7 +111,7 @@ Pide metadata **sin descargar**. Se dispara al enviar un link.
 type MetadataRequest = Envelope<'metadata.request', {
   item_id: string;                // UUID, generado por el Worker
   source_url: string;             // ya validado contra la allowlist
-  platform: 'instagram' | 'twitch' | 'youtube';
+  platform: 'instagram' | 'tiktok' | 'twitch' | 'youtube' | 'kappa' | 'x';
 }>;
 ```
 
@@ -125,7 +125,7 @@ Solo llega **después de la aprobación de un mod**. Nada se descarga sin esto.
 type DownloadRequest = Envelope<'download.request', {
   item_id: string;
   source_url: string;
-  platform: 'instagram' | 'twitch' | 'youtube';
+  platform: 'instagram' | 'tiktok' | 'twitch' | 'youtube' | 'kappa' | 'x';
   max_resolution: '720' | '1080';
   approved_by: string;            // login del mod (auditoría / UI del agente)
 }>;
@@ -168,7 +168,7 @@ type Resync = Envelope<'resync', {
   items: Array<{
     item_id: string;
     source_url: string;
-    platform: 'instagram' | 'twitch' | 'youtube';
+    platform: 'instagram' | 'tiktok' | 'twitch' | 'youtube' | 'kappa' | 'x';
     status: 'pending_review' | 'approved' | 'downloading' | 'ready';
     position: number;             // orden FIFO autoritativo
   }>;

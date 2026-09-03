@@ -95,6 +95,38 @@ test('el link largo de TikTok conserva el www que yt-dlp exige', () => {
   if (c.ok) assert.equal(c.url, 'https://vm.tiktok.com/ZM8abc123');
 });
 
+test('de X acepta posts en cualquiera de sus formas y normaliza a x.com', () => {
+  for (const u of [
+    'https://x.com/NASA/status/1834334523344568597',
+    'https://twitter.com/NASA/status/1834334523344568597',
+    'https://mobile.twitter.com/NASA/status/1834334523344568597?s=20&t=abc',
+    'https://x.com/NASA/status/1834334523344568597/video/1',
+  ]) {
+    const r = checkUrl(u);
+    assert.equal(r.ok, true, u);
+    if (r.ok) {
+      assert.equal(r.platform, 'x');
+      assert.equal(r.url, 'https://x.com/NASA/status/1834334523344568597');
+    }
+  }
+  const i = checkUrl('https://x.com/i/status/1834334523344568597');
+  assert.equal(i.ok, true);
+  if (i.ok) assert.equal(i.url, 'https://x.com/i/status/1834334523344568597');
+});
+
+test('de X no pasan perfiles, búsquedas ni listas', () => {
+  for (const u of [
+    'https://x.com/NASA',
+    'https://x.com/search?q=nasa',
+    'https://x.com/i/lists/123',
+    'https://x.com/NASA/status/',
+    'https://x.com/NASA/status/abc',
+    'https://x.com/home',
+  ]) {
+    assert.equal(checkUrl(u).ok, false, u);
+  }
+});
+
 test('de TikTok no pasa un perfil', () => {
   for (const u of [
     'https://www.tiktok.com/@alguien',

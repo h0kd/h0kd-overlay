@@ -17,6 +17,8 @@ pub enum Platform {
     Youtube,
     /// kappa.lol: un host de archivos, no una red. Sirve el mp4 directo.
     Kappa,
+    /// X (Twitter): x.com y twitter.com, solo posts (`/usuario/status/<id>`).
+    X,
 }
 
 impl Platform {
@@ -27,6 +29,7 @@ impl Platform {
             Platform::Twitch => "twitch",
             Platform::Youtube => "youtube",
             Platform::Kappa => "kappa",
+            Platform::X => "x",
         }
     }
 
@@ -37,6 +40,7 @@ impl Platform {
             "twitch" => Some(Platform::Twitch),
             "youtube" => Some(Platform::Youtube),
             "kappa" => Some(Platform::Kappa),
+            "x" => Some(Platform::X),
             _ => None,
         }
     }
@@ -59,6 +63,9 @@ const ALLOWED: &[(&str, Platform)] = &[
     ("youtu.be", Platform::Youtube),
     // Solo el host pelado (ver `check`): w.kappa.lol y compañía son otra cosa.
     ("kappa.lol", Platform::Kappa),
+    // X: los dos dominios son lo mismo y yt-dlp los lee con el mismo extractor.
+    ("x.com", Platform::X),
+    ("twitter.com", Platform::X),
 ];
 
 /// Verifica que la URL siga siendo una que aceptamos tocar.
@@ -130,8 +137,32 @@ pub fn check(url: &str) -> Result<Platform> {
             "De kappa.lol solo se aceptan links a un archivo (kappa.lol/abc123).",
         ));
     }
+    if platform == Platform::X && !is_x_status_path(path) {
+        return Err(ErrorDetail::new(
+            ErrorCode::UnsupportedPlatform,
+            "De X solo se aceptan posts (x.com/usuario/status/...).",
+        ));
+    }
 
     Ok(platform)
+}
+
+/// X: `x.com/<usuario>/status/<id>` o `x.com/i/status/<id>`. Lo que venga
+/// después del id (`/video/1`, `/photo/1`) se tolera; el Worker ya lo sacó.
+/// Perfiles, búsquedas y listas no son un video para yt-dlp.
+fn is_x_status_path(path: &str) -> bool {
+    let clean = path.split(['?', '#']).next().unwrap_or(path);
+    let partes: Vec<&str> = clean.trim_matches('/').split('/').filter(|s| !s.is_empty()).collect();
+    match partes.as_slice() {
+        [usuario, "status", id, ..] => {
+            let usuario_ok = *usuario == "i"
+                || (!usuario.is_empty()
+                    && usuario.len() <= 15
+                    && usuario.chars().all(|c| c.is_ascii_alphanumeric() || c == '_'));
+            usuario_ok && (5..=25).contains(&id.len()) && id.chars().all(|c| c.is_ascii_digit())
+        }
+        _ => false,
+    }
 }
 
 /// kappa.lol sirve un archivo por link: `kappa.lol/<id>`, con extensión y
@@ -248,6 +279,33 @@ mod tests {
             "https://kappa.lol/api/upload",
             "https://w.kappa.lol/qMiVeE",
             "https://kappa.lol/qM",
+        ] {
+            assert!(check(u).is_err(), "{u} no debería pasar");
+        }
+    }
+
+    #[test]
+    fn acepta_un_post_de_x() {
+        for u in [
+            "https://x.com/NASA/status/1834334523344568597",
+            "https://twitter.com/NASA/status/1834334523344568597",
+            "https://mobile.twitter.com/NASA/status/1834334523344568597?s=20",
+            "https://x.com/i/status/1834334523344568597",
+            "https://x.com/NASA/status/1834334523344568597/video/1",
+        ] {
+            assert_eq!(check(u).unwrap(), Platform::X, "{u}");
+        }
+    }
+
+    #[test]
+    fn de_x_no_pasan_perfiles_ni_busquedas() {
+        for u in [
+            "https://x.com/NASA",
+            "https://x.com/search?q=nasa",
+            "https://x.com/i/lists/123",
+            "https://x.com/NASA/status/",
+            "https://x.com/NASA/status/abc",
+            "https://x.com/home",
         ] {
             assert!(check(u).is_err(), "{u} no debería pasar");
         }

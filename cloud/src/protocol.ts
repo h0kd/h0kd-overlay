@@ -11,7 +11,7 @@ export const WS_SUBPROTOCOL = 'h0kd-vr.1';
 /** Tope de tamaño por mensaje. Más grande que esto se descarta. */
 export const MAX_MESSAGE_BYTES = 64 * 1024;
 
-export type Platform = 'instagram' | 'tiktok' | 'twitch' | 'youtube' | 'kappa';
+export type Platform = 'instagram' | 'tiktok' | 'twitch' | 'youtube' | 'kappa' | 'x';
 
 export type ItemStatus =
   | 'submitted'

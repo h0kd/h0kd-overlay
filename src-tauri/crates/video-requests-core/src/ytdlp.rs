@@ -91,6 +91,21 @@ fn base_args(platform: Platform, cookies: Option<&Path>) -> Vec<String> {
         a.push("--sleep-requests".to_string());
         a.push(SLEEP_REQUESTS.to_string());
     }
+    // Un post de X puede traer hasta cuatro videos y yt-dlp lo trata como
+    // lista. `--no-playlist` no aplica ahí (es para links que son video Y
+    // lista a la vez), así que se pide el primero explícitamente: un pedido
+    // es un video, y bajar cuatro dejaría archivos huérfanos con el mismo stem.
+    if platform == Platform::X {
+        a.push("--playlist-items".to_string());
+        a.push("1".to_string());
+        // Un post SIN video pero con link hace que el extractor de X siga el
+        // link y se lo pase al genérico: yt-dlp terminaba leyendo nasa.gov (o
+        // lo que sea que el viewer haya puesto) desde la máquina del streamer.
+        // Con los extractores acotados a X, ese caso muere en "No suitable
+        // extractor" sin tocar el destino.
+        a.push("--use-extractors".to_string());
+        a.push("twitter.*".to_string());
+    }
     if platform == Platform::Instagram {
         if let Some(c) = cookies {
             a.push("--cookies".to_string());

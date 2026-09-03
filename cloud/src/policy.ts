@@ -23,6 +23,10 @@ const ALLOWED: Array<{ host: string; platform: Platform }> = [
   // sirve el mp4 directo y yt-dlp lo baja con su extractor genérico. Solo el
   // host pelado: sus subdominios (w.kappa.lol) son otra cosa.
   { host: 'kappa.lol', platform: 'kappa' },
+  // X (Twitter). Los dos dominios apuntan a lo mismo; yt-dlp los lee con el
+  // mismo extractor. Solo pasan los posts (`/usuario/status/<id>`).
+  { host: 'x.com', platform: 'x' },
+  { host: 'twitter.com', platform: 'x' },
 ];
 
 export type UrlCheck =
@@ -64,8 +68,20 @@ export function checkUrl(raw: string): UrlCheck {
   if (!match) {
     return {
       ok: false,
-      reason: 'Por ahora solo se aceptan links de TikTok, Instagram, YouTube, Twitch y kappa.lol.',
+      reason: 'Por ahora solo se aceptan links de TikTok, Instagram, YouTube, X, Twitch y kappa.lol.',
     };
+  }
+
+  // X: un post por link, `x.com/<usuario>/status/<id>` (o `/i/status/<id>`,
+  // que es como lo comparte la app a veces). Se normaliza a x.com sin el
+  // `/video/1` ni nada después del id. Perfiles, búsquedas y listas no pasan:
+  // para yt-dlp no son un video.
+  if (match.platform === 'x') {
+    const m = /^\/(i|[A-Za-z0-9_]{1,15})\/status\/(\d{5,25})(?:\/.*)?$/.exec(u.pathname);
+    if (!m) {
+      return { ok: false, reason: 'De X solo se aceptan posts con video (x.com/usuario/status/…).' };
+    }
+    return { ok: true, platform: 'x', url: `https://x.com/${m[1]}/status/${m[2]}` };
   }
 
   // kappa.lol: un archivo por link, `kappa.lol/<id>`. La extensión y lo que

@@ -212,7 +212,7 @@ const CSS = `
      tiene que llenar la caja igual, recortando en vez de deformar. La imagen
      viene de un CDN ajeno y puede tener cualquier proporcion. */
   .thumb img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-  /* El horizontal es para clips 16:9; el vertical, para Reels y TikToks. */
+  /* El horizontal es para clips 16:9 y posts de X; el vertical, para Reels y TikToks. */
   .thumb.wide { width: 168px; aspect-ratio: 16 / 9; }
   .t-1 { background: linear-gradient(160deg, #3b2a68 10%, #7f5adf 55%, #2a1b4d); }
   .t-2 { background: linear-gradient(200deg, #145049 5%, #2fae90 60%, #0d3a35); }
@@ -244,6 +244,7 @@ const CSS = `
   .net.tt { background: #101014; box-shadow: 0 0 0 1px rgba(255,255,255,.14) inset; }
   .net.yt { background: #e62117; }
   .net.kp { background: #1f8a70; }
+  .net.xc { background: #000; box-shadow: 0 0 0 1px rgba(255,255,255,.18) inset; }
   .link-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
   .link-title { font-weight: 600; font-size: 16px; line-height: 1.35; }
   .link-meta { color: var(--muted); font-size: 13.5px; display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: center; }
@@ -521,6 +522,9 @@ const ICONS = `<svg width="0" height="0" style="position:absolute" aria-hidden="
     <symbol id="ic-kp" viewBox="0 0 24 24">
       <path fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" d="M7 4.5v15M17 4.5l-9 8.2M9.6 11.2 17 19.5"/>
     </symbol>
+    <symbol id="ic-xcom" viewBox="0 0 24 24">
+      <path fill="currentColor" d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+    </symbol>
     <symbol id="ic-check" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.5 5 5 10-11"/></symbol>
     <symbol id="ic-x" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" d="M6 6l12 12M18 6 6 18"/></symbol>
     <symbol id="ic-out" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4M10 8l-4 4 4 4M6 12h10"/></symbol>
@@ -599,6 +603,7 @@ const NET = {
   youtube:   { icono: 'ic-yt', clase: 'yt', nombre: 'YouTube' },
   twitch:    { icono: 'ic-tw', clase: 'tw', nombre: 'Twitch' },
   kappa:     { icono: 'ic-kp', clase: 'kp', nombre: 'kappa.lol' },
+  x:         { icono: 'ic-xcom', clase: 'xc', nombre: 'X' },
 };
 function netBadge(plataforma) {
   const n = NET[plataforma];
@@ -613,7 +618,9 @@ function plataformasDe(hosts) {
     const p = h.indexOf('tiktok') >= 0 ? 'tiktok'
       : h.indexOf('instagram') >= 0 ? 'instagram'
       : h.indexOf('youtu') >= 0 ? 'youtube'
-      : (h.indexOf('kappa') >= 0 ? 'kappa' : 'twitch');
+      : h.indexOf('kappa') >= 0 ? 'kappa'
+      : (h === 'x.com' || h.indexOf('twitter') >= 0) ? 'x'
+      : 'twitch';
     if (vistas.indexOf(p) < 0) vistas.push(p);
   }
   return vistas;
