@@ -977,6 +977,10 @@
         <input type="checkbox" id="vrlZones" />
         <span>Al azar: respetar safe zones (no aparecer sobre la webcam u otras zonas)</span>
       </label>
+      <label class="vr-toggle">
+        <input type="checkbox" id="vrlWho" />
+        <span>Mostrar quién lo pidió, arriba del video ("pedido de <b>usuario</b>")</span>
+      </label>
       <p class="vr-foot">
         100% = el video llena la pantalla sin deformarse; un Reel vertical y un clip
         horizontal al mismo % se ven del mismo tamaño. Se aplica al guardar.
@@ -1655,6 +1659,7 @@
       x:       (typeof v.x === 'number') ? v.x : cw / 2,
       y:       (typeof v.y === 'number') ? v.y : ch / 2,
       zones:   v.respectSafeZones !== false,
+      who:     v.showSubmitter !== false,
       animIn:  v.animIn  || 'pop',
       animOut: v.animOut || 'pop',
       cw: cw, ch: ch
@@ -1718,6 +1723,7 @@
     if (vs.value != volPct) vs.value = volPct;
     document.getElementById('vrlVolumePct').textContent = volPct + '%';
     document.getElementById('vrlZones').checked = L.zones;
+    document.getElementById('vrlWho').checked = L.who;
     document.getElementById('vrlAnimIn').innerHTML  = animOptionsHtml(ANIM_IN_OPTS,  L.animIn);
     document.getElementById('vrlAnimOut').innerHTML = animOptionsHtml(ANIM_OUT_OPTS, L.animOut);
     Array.prototype.forEach.call(document.querySelectorAll('#vrlOri button'), function(b) {
@@ -1741,6 +1747,9 @@
     });
     document.getElementById('vrlZones').addEventListener('change', function() {
       vrlWrite({ respectSafeZones: this.checked });
+    });
+    document.getElementById('vrlWho').addEventListener('change', function() {
+      vrlWrite({ showSubmitter: this.checked });
     });
     document.getElementById('vrlAnimIn').addEventListener('change', function() {
       vrlWrite({ animIn: this.value });

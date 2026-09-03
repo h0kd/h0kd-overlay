@@ -51,8 +51,8 @@ cada canal comparte sus links con `?ch=<login>` (están en su `/admin`).
 6. **OBS**: fuente de navegador con la URL que la app muestra abajo
    ("OBS Browser Source"), al tamaño del canvas. La experimental usa el
    puerto 3002.
-7. **En pantalla** (misma pestaña): posición, tamaño y volumen de los
-   pedidos. Se aplica con Guardar.
+7. **En pantalla** (misma pestaña): posición, tamaño, volumen y si se muestra
+   quién pidió cada video. Se aplica con Guardar.
 8. **Ventana de preview (para VRChat)**, opcional: una ventana aparte de la
    app que muestra los pedidos sin sonido mientras salen en OBS. Se marca en
    la misma pestaña y actúa al instante; en VRChat se captura esa ventana

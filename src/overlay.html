@@ -72,6 +72,27 @@
       visibility: hidden;
     }
     #vrStage video.placed { visibility: visible; }
+    /* Quién lo pidió, arriba del video. Se ubica junto con el video en
+       placeRequest; hasta entonces no se ve, igual que él. */
+    #vrStage .vr-who {
+      position: absolute;
+      visibility: hidden;
+      max-width: 100%;
+      box-sizing: border-box;
+      padding: 6px 14px;
+      border-radius: 999px;
+      background: rgba(14, 14, 16, .82);
+      color: #efeff1;
+      font: 600 22px/1.2 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, .6);
+      box-shadow: 0 4px 18px rgba(0, 0, 0, .45);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    #vrStage .vr-who.placed { visibility: visible; }
+    #vrStage .vr-who small { font-weight: 400; opacity: .75; margin-right: .35em; }
+    #vrStage .vr-who b { color: #bf94ff; }
 
     /* ── Setup status badge ──────────────────────────────────────────────────
        Visible ONLY while configuring (page load → first successful connection).
@@ -181,6 +202,8 @@
         respectZones: c.respectSafeZones !== false,
         animIn: c.animIn || 'pop',
         animOut: c.animOut || 'pop',
+        // Rótulo con quién lo pidió, arriba del video. Prendido salvo que se apague.
+        showSubmitter: c.showSubmitter !== false,
         // Los pedidos salían siempre al 100% y en stream se escuchaban muy
         // fuerte al lado de todo lo demás. Mismo rango que los canjes.
         volume: (typeof c.volume === 'number') ? Math.min(1, Math.max(0, c.volume)) : 0.8
@@ -190,7 +213,7 @@
     // Ubica y dimensiona el video una vez conocida su proporción real.
     // 100% = el video llena la pantalla sin recortarse, la misma regla que el
     // tamaño de los canjes, así el mismo % se ve igual en vertical y horizontal.
-    function placeRequest(video, vw, vh) {
+    function placeRequest(video, vw, vh, who) {
       const L = vrLayout();
       const cW = config.canvas.width;
       const cH = config.canvas.height;
@@ -214,6 +237,16 @@
       });
       if (L.animIn !== 'none' && IN_ANIMS[L.animIn]) video.style.animation = IN_ANIMS[L.animIn];
       video.classList.add('placed');
+      if (who) {
+        // Arriba del video, alineado a su borde izquierdo y no más ancho que
+        // él. Si el video está pegado al borde superior, va adentro.
+        const gap = 10;
+        const wh = who.offsetHeight || 40;
+        const top = y - wh - gap >= 0 ? y - wh - gap : y + gap;
+        Object.assign(who.style, { left: x + 'px', top: top + 'px', maxWidth: fw + 'px' });
+        if (L.animIn !== 'none' && IN_ANIMS[L.animIn]) who.style.animation = IN_ANIMS[L.animIn];
+        who.classList.add('placed');
+      }
       log(`  → pos=(${x},${y}) ${fw}×${fh} ${L.random ? 'al azar' : 'fija'} ${L.pct}%`);
     }
 
@@ -228,6 +261,20 @@
       video.playsInline = true;
       video.volume = vrLayout().volume;
 
+      // Quién lo pidió. El nombre viene del agente (lo puso el DO al aprobar);
+      // se arma con nodos, nunca con innerHTML: es texto de un viewer.
+      let who = null;
+      if (vrLayout().showSubmitter && data.submitter) {
+        who = document.createElement('div');
+        who.className = 'vr-who';
+        const pre = document.createElement('small');
+        pre.textContent = 'pedido de';
+        const name = document.createElement('b');
+        name.textContent = data.submitter;
+        who.appendChild(pre);
+        who.appendChild(name);
+      }
+
       let done = false;
       let guard = null;
       const started = Date.now();
@@ -239,7 +286,10 @@
         const L = vrLayout();
         const out = OUT_ANIMS[L.animOut];
         const animated = L.animOut !== 'none' && !!out && video.classList.contains('placed');
-        if (animated) video.style.animation = out;
+        if (animated) {
+          video.style.animation = out;
+          if (who) who.style.animation = out;
+        }
         setTimeout(function () {
           // Solo si nadie puso otro pedido en el medio.
           if (video.parentNode === stage) {
@@ -274,7 +324,7 @@
       video.addEventListener('loadedmetadata', function () {
         const d = isFinite(video.duration) && video.duration > 0 ? video.duration : 0;
         armGuard(Math.round((d + 15) * 1000));
-        placeRequest(video, video.videoWidth || 16, video.videoHeight || 9);
+        placeRequest(video, video.videoWidth || 16, video.videoHeight || 9, who);
       });
 
       video.addEventListener('ended', function () { finish('ended'); });
@@ -284,6 +334,7 @@
       });
 
       stage.appendChild(video);
+      if (who) stage.appendChild(who);
       // OBS deja arrancar con sonido sin que nadie toque nada; un navegador
       // normal (alguien abriendo el overlay en Chrome para mirarlo) lo bloquea.
       // Sin este catch, ese bloqueo se vería como un cuadro congelado hasta que
