@@ -120,12 +120,8 @@ const CSS = `
   .avatar img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; display: block; }
   /* El OC de h0kd girando, el mismo gif que el favicon y que el panel de la
      app. Es un <img>, así que anima en todos los navegadores. */
-  .logo-mark {
-    width: 38px; height: 38px; border-radius: 10px; overflow: hidden;
-    background: linear-gradient(135deg, var(--accent-strong), var(--accent));
-    box-shadow: 0 4px 14px rgba(145, 70, 255, .35);
-  }
-  .logo-mark img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .logo-mark { width: 40px; height: 40px; }
+  .logo-mark img { width: 100%; height: 100%; object-fit: contain; display: block; }
   .logo-name {
     font-family: "Bricolage Grotesque", sans-serif;
     font-weight: 700; font-size: 19px; letter-spacing: -.02em;
@@ -462,16 +458,52 @@ const CSS = `
     max-width: 1060px; margin: 0 auto; padding: 0 24px 40px;
     color: var(--faint); font-size: 13px; text-align: center;
   }
+  /* ---------- celular ----------
+     Una sola columna y nada que desborde a lo ancho: el título y la URL se
+     cortan donde haga falta, las pestañas van en una fila que se envuelve y
+     la pastilla del agente pasa arriba, sola. En las tarjetas, la miniatura
+     y el texto siguen lado a lado; las pastillas y botones bajan a una fila
+     propia, así el título no se parte palabra por palabra. */
   @media (max-width: 720px) {
-    .topbar { flex-wrap: wrap; padding: 10px 14px; }
+    html, body { overflow-x: hidden; }
+    .topbar { flex-wrap: wrap; padding: 10px 14px; gap: 8px 12px; }
+    .logo-mark { width: 34px; height: 34px; }
+    .logo-name { font-size: 17px; }
+    .user-chip { padding: 4px 8px 4px 4px; gap: 6px; }
     .user-chip .who span { display: none; }
-    main { padding: 22px 14px 60px; }
-    .link-row { gap: 12px; }
-    .thumb { width: 84px; }
-    .link-side { align-items: flex-start; }
-    .link-row { flex-wrap: wrap; }
-    .profile-stats { margin-left: 0; text-align: left; }
+    .user-chip .avatar { width: 28px; height: 28px; }
+    main { padding: 18px 14px 80px; }
+    .view-head { margin-bottom: 18px; }
+    .view-head h1 { font-size: 24px; }
+    .view-head p { font-size: 14px; }
+    .card { padding: 16px; }
+    .submit-form { flex-direction: column; }
+    .submit-form .btn { width: 100%; padding: 12px; }
+    .tabs { flex-wrap: wrap; gap: 0 2px; margin-bottom: 16px; }
+    .tabs .tab { padding: 8px 10px 10px; font-size: 14px; white-space: nowrap; }
+    .tabs > span[style] { display: none; }
+    /* La pastilla del agente primero y sola en su línea: el ::after con
+       order -1 queda justo después de ella y ocupa el ancho entero, así las
+       pestañas arrancan en la línea siguiente. */
+    .tabs > .pill { order: -1; flex: 0 0 auto; margin: 0 0 10px; }
+    .tabs::after { content: ''; order: -1; flex-basis: 100%; height: 0; }
+    .link-row { gap: 12px; flex-wrap: wrap; padding: 12px; }
+    .thumb { width: 78px; }
+    .link-body { flex: 1 1 0; min-width: 0; }
+    .link-title { font-size: 15px; overflow-wrap: anywhere; }
+    .link-meta, .verdict, .reason { font-size: 13px; }
+    .link-meta .mono { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .link-side { flex: 1 0 100%; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 8px; }
+    .link-side .btn { flex: 1; }
+    .stat-grid { grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 20px; }
+    .stat { padding: 12px 14px; }
+    .stat .value { font-size: 24px; }
+    .stat .label { font-size: 11px; }
+    .grid { grid-template-columns: 1fr; }
+    .profile-stats { margin-left: 0; text-align: left; gap: 16px; }
     .profile-head { flex-wrap: wrap; }
+    .filter-bar { gap: 8px; }
+    .chip { padding: 5px 11px; }
   }
   @media (prefers-reduced-motion: reduce) {
     * { transition: none !important; }
