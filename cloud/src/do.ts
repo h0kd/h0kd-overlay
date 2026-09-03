@@ -132,6 +132,11 @@ export class ChannelHub implements DurableObject {
     }
 
     this.ctx.acceptWebSocket(server, [tag]);
+    // Cuándo entró, para que `agentSocket()` elija siempre el más nuevo. El
+    // close() de arriba no saca al viejo de getWebSockets() al instante: si
+    // su peer murió sin cerrar (la app cerrada a la fuerza), el zombi sigue
+    // listado hasta que Cloudflare lo dé por perdido, y [0] era ese.
+    server.serializeAttachment({ accepted_at: Date.now() });
     // El saludo se manda fuera del camino de respuesta para no demorar el 101.
     this.ctx.waitUntil(tag === TAG_AGENT ? this.greetAgent(server) : this.greetMod(server));
     return new Response(null, { status: 101, webSocket: client, headers });
@@ -156,7 +161,7 @@ export class ChannelHub implements DurableObject {
     // metadata no entra en el resync y nadie más lo va a pedir. Si no se
     // despacha acá, esos pedidos quedan huérfanos para siempre y el viewer ve
     // "leyendo el video…" hasta que termine el stream.
-    await this.dispatchPending();
+    await this.dispatchPending(ws);
     await this.setAgentSnapshot({ online: true, updated_at: Date.now() });
     await this.pushAgentStateToMods();
   }
@@ -334,7 +339,9 @@ export class ChannelHub implements DurableObject {
   }
 
   async webSocketClose(ws: WebSocket): Promise<void> {
-    if (this.ctx.getTags(ws).includes(TAG_AGENT)) {
+    // Si el que se cierra es el zombi y ya hay un agente nuevo, el canal
+    // sigue online: marcarlo offline acá era mentirle a los mods.
+    if (this.ctx.getTags(ws).includes(TAG_AGENT) && this.agentSocket(ws) === null) {
       await this.setAgentSnapshot({ online: false, updated_at: Date.now() });
       await this.pushAgentStateToMods();
     }
@@ -347,9 +354,9 @@ export class ChannelHub implements DurableObject {
   // ── Acciones que vienen del Worker ─────────────────────────────────────────
 
   /** Pide metadata de todo lo que entró y todavía no se consultó. */
-  private async dispatchPending(): Promise<void> {
+  private async dispatchPending(to?: WebSocket): Promise<void> {
     const meta = await this.meta();
-    const agent = this.agentSocket();
+    const agent = to ?? this.agentSocket();
     if (!meta || !agent) return;
     for (const item of await q.listByStatus(this.env.DB, meta.channel_id, ['submitted'])) {
       send(agent, envelope('metadata.request', {
@@ -517,8 +524,29 @@ export class ChannelHub implements DurableObject {
 
   // ── Helpers ────────────────────────────────────────────────────────────────
 
-  private agentSocket(): WebSocket | null {
-    return this.ctx.getWebSockets(TAG_AGENT)[0] ?? null;
+  /**
+   * El socket del agente VIGENTE: el aceptado más recientemente. Puede haber
+   * más de uno listado un rato (ver acceptSocket); el viejo es un zombi al
+   * que no le llega nada, y mandarle el `metadata.request` a ese dejaba al
+   * pedido en "leyendo el video…" para siempre.
+   */
+  private agentSocket(except?: WebSocket): WebSocket | null {
+    let best: WebSocket | null = null;
+    let bestAt = -1;
+    for (const ws of this.ctx.getWebSockets(TAG_AGENT)) {
+      if (ws === except) continue;
+      let at = 0;
+      try {
+        at = (ws.deserializeAttachment() as { accepted_at?: number } | null)?.accepted_at ?? 0;
+      } catch {
+        /* sin attachment: socket de antes de este cambio; vale 0 */
+      }
+      if (at >= bestAt) {
+        best = ws;
+        bestAt = at;
+      }
+    }
+    return best;
   }
 
   private async meta(): Promise<StoredMeta | null> {
