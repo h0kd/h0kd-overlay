@@ -152,6 +152,18 @@ pub fn classify_ytdlp_stderr(stderr: &str) -> ErrorDetail {
             "Se cortó la conexión con el sitio.",
         );
     }
+    // Reel restringido por Instagram (edad o región): solo lo ve una cuenta
+    // con sesión. Sin cookies no hay nada roto que actualizar; pasó en stream
+    // y el mod leyó "probá actualizar yt-dlp" por un link que nunca iba a andar.
+    if s.contains("isn't available to everyone")
+        || s.contains("can't be seen by certain audiences")
+    {
+        return ErrorDetail::new(
+            ErrorCode::NotFound,
+            "Instagram restringe ese reel a ciertos públicos (edad o región): solo se ve \
+             con una cuenta con sesión. Sin cookies de Instagram cargadas no se puede bajar.",
+        );
+    }
     if s.contains("video unavailable")
         || s.contains("http error 404")
         || s.contains("this post is unavailable")
@@ -249,6 +261,16 @@ mod tests {
         assert_eq!(d.code, ErrorCode::NotFound);
         assert!(!d.retryable);
         assert!(d.message.contains("Reels"));
+    }
+
+    #[test]
+    fn reel_restringido_no_es_extractor_roto() {
+        let out = "ERROR: [Instagram] Dcgrv9ZIDmn: This content isn't available to everyone: It can't be seen by certain audiences.";
+        let d = classify_ytdlp_stderr(out);
+        assert_eq!(d.code, ErrorCode::NotFound);
+        assert!(!d.retryable);
+        assert!(d.message.contains("restringe"));
+        assert!(!d.message.contains("yt-dlp"));
     }
 
     #[test]
