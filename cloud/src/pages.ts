@@ -492,7 +492,12 @@ const CSS = `
     .link-body { flex: 1 1 0; min-width: 0; }
     .link-title { font-size: 15px; overflow-wrap: anywhere; }
     .link-meta, .verdict, .reason { font-size: 13px; }
-    .link-meta .mono { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    /* La URL va dentro de un <a> en línea: para que el recorte con puntos
+       suspensivos aplique, tanto el <a> como el texto tienen que ser bloque
+       y no poder crecer más que la tarjeta. */
+    .link-meta > * { min-width: 0; max-width: 100%; }
+    .link-meta a.ir { display: block; }
+    .link-meta .mono { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .link-side { flex: 1 0 100%; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 8px; }
     .link-side .btn { flex: 1; }
     .stat-grid { grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 20px; }
