@@ -118,12 +118,14 @@ const CSS = `
      derecha. Sin él, el chip quedaba pegado al logo. */
   .user-chip { margin-left: auto; }
   .avatar img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; display: block; }
+  /* El OC de h0kd girando, el mismo gif que el favicon y que el panel de la
+     app. Es un <img>, así que anima en todos los navegadores. */
   .logo-mark {
-    width: 34px; height: 34px; border-radius: 9px;
+    width: 38px; height: 38px; border-radius: 10px; overflow: hidden;
     background: linear-gradient(135deg, var(--accent-strong), var(--accent));
-    display: grid; place-items: center; color: #fff;
     box-shadow: 0 4px 14px rgba(145, 70, 255, .35);
   }
+  .logo-mark img { width: 100%; height: 100%; object-fit: cover; display: block; }
   .logo-name {
     font-family: "Bricolage Grotesque", sans-serif;
     font-weight: 700; font-size: 19px; letter-spacing: -.02em;
@@ -567,7 +569,7 @@ function page(title: string, body: string, script: string): string {
 ${ICONS}
 <header class="topbar">
   <div class="logo">
-    <div class="logo-mark"><svg width="19" height="19"><use href="#ic-link"/></svg></div>
+    <div class="logo-mark"><img src="/favicon.webp" alt="" width="38" height="38" decoding="async"></div>
     <div class="logo-name">Video <em>Requests</em></div>
   </div>
   <div class="user-chip" id="userChip" hidden>
