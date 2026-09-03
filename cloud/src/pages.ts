@@ -437,6 +437,45 @@ const CSS = `
   }
   .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
   .toast .ok-dot { color: var(--ok); }
+  /* ---------- avisos (notificaciones con sonido) ----------
+     Suben desde la esquina inferior derecha y se van solos. El sonido y la
+     campana de arriba se silencian juntos; la elección queda en el navegador. */
+  .notif-stack {
+    position: fixed; right: 20px; bottom: 20px; z-index: 60;
+    display: flex; flex-direction: column; gap: 10px; align-items: flex-end;
+    pointer-events: none;
+  }
+  .notif {
+    pointer-events: auto; cursor: pointer;
+    display: flex; align-items: center; gap: 12px;
+    min-width: 260px; max-width: min(380px, calc(100vw - 40px));
+    padding: 12px 14px;
+    background: var(--surface-3); color: var(--text);
+    border: 1px solid var(--border); border-left: 3px solid var(--accent);
+    border-radius: 12px; box-shadow: var(--shadow);
+    animation: notifIn .38s cubic-bezier(.2, .9, .3, 1.2) both;
+  }
+  .notif.bye { animation: notifOut .25s ease-in forwards; }
+  .notif .notif-ic {
+    flex: none; width: 34px; height: 34px; border-radius: 9px;
+    display: grid; place-items: center;
+    background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent);
+  }
+  .notif .notif-body { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .notif b { font-size: 14.5px; }
+  .notif span { font-size: 13px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  @keyframes notifIn  { from { opacity: 0; transform: translateY(28px) scale(.96); } to { opacity: 1; transform: none; } }
+  @keyframes notifOut { to { opacity: 0; transform: translateY(12px); } }
+  .bell { position: relative; }
+  .bell.off { color: var(--faint); }
+  .bell.off::after {
+    content: ''; position: absolute; left: 50%; top: 50%; width: 20px; height: 2px;
+    background: currentColor; transform: translate(-50%, -50%) rotate(-45deg); border-radius: 2px;
+  }
+  @media (max-width: 720px) {
+    .notif-stack { right: 12px; left: 12px; bottom: 12px; align-items: stretch; }
+    .notif { max-width: none; }
+  }
   footer.proto-note {
     max-width: 1060px; margin: 0 auto; padding: 0 24px 40px;
     color: var(--faint); font-size: 13px; text-align: center;
@@ -525,6 +564,7 @@ const ICONS = `<svg width="0" height="0" style="position:absolute" aria-hidden="
     <symbol id="ic-xcom" viewBox="0 0 24 24">
       <path fill="currentColor" d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
     </symbol>
+    <symbol id="ic-bell" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M6 16V11a6 6 0 1 1 12 0v5l1.5 2h-15zM10 20a2 2 0 0 0 4 0"/></symbol>
     <symbol id="ic-check" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.5 5 5 10-11"/></symbol>
     <symbol id="ic-x" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" d="M6 6l12 12M18 6 6 18"/></symbol>
     <symbol id="ic-out" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4M10 8l-4 4 4 4M6 12h10"/></symbol>
@@ -554,11 +594,13 @@ ${ICONS}
       <b id="chipName"></b>
       <span><span class="twitch-dot"></span> Conectado con Twitch</span>
     </div>
+    <button class="btn ghost sm bell" id="bellBtn" title="Avisos con sonido" aria-label="Avisos con sonido"><svg width="16" height="16"><use href="#ic-bell"/></svg></button>
     <button class="btn ghost sm" id="logoutBtn" title="Cerrar sesión" aria-label="Cerrar sesión"><svg width="16" height="16"><use href="#ic-out"/></svg></button>
   </div>
 </header>
 <main>${body}</main>
 <div class="toast" id="toast"></div>
+<div class="notif-stack" id="notifStack" aria-live="polite"></div>
 <script>${SHARED_JS}${script}</script>
 </body></html>`;
 }
@@ -748,6 +790,94 @@ function toast(msg) {
   clearTimeout(toast._t);
   toast._t = setTimeout(function () { t.classList.remove('show'); }, 3200);
 }
+
+// ── Avisos con sonido ────────────────────────────────────────────────────────
+// notify(titulo, detalle) sube una tarjeta desde abajo a la derecha y suena.
+// La campana de la barra los silencia (sonido y tarjeta); la elección queda
+// en localStorage por navegador. El sonido se genera con WebAudio: no hay
+// archivo que servir, y el contexto se destraba con el primer click o tecla,
+// que es lo que exige el navegador.
+const NOTIF_KEY = 'vr_notif_muted';
+let notifMuted = false;
+try { notifMuted = localStorage.getItem(NOTIF_KEY) === '1'; } catch (_) {}
+let audioCtx = null;
+function unlockAudio() {
+  try {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+  } catch (_) {}
+}
+document.addEventListener('pointerdown', unlockAudio, { passive: true });
+document.addEventListener('keydown', unlockAudio);
+function chime() {
+  if (!audioCtx || audioCtx.state !== 'running') return;
+  const t0 = audioCtx.currentTime;
+  [[880, 0], [1174.7, 0.11]].forEach(function (n) {
+    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.type = 'sine'; o.frequency.value = n[0];
+    g.gain.setValueAtTime(0.0001, t0 + n[1]);
+    g.gain.exponentialRampToValueAtTime(0.18, t0 + n[1] + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + n[1] + 0.45);
+    o.connect(g).connect(audioCtx.destination);
+    o.start(t0 + n[1]); o.stop(t0 + n[1] + 0.5);
+  });
+}
+function paintBell() {
+  const b = $('#bellBtn');
+  if (!b) return;
+  b.classList.toggle('off', notifMuted);
+  b.title = notifMuted ? 'Avisos silenciados (click para activar)' : 'Avisos con sonido (click para silenciar)';
+}
+function notify(titulo, detalle) {
+  if (notifMuted) return;
+  const stack = $('#notifStack');
+  const card = el('div', 'notif');
+  const ic = el('div', 'notif-ic');
+  const svg = document.createElementNS(SVGNS, 'svg');
+  svg.setAttribute('width', 18); svg.setAttribute('height', 18);
+  const use = document.createElementNS(SVGNS, 'use'); use.setAttribute('href', '#ic-bell');
+  svg.appendChild(use); ic.appendChild(svg);
+  const body = el('div', 'notif-body');
+  body.appendChild(el('b', null, titulo));
+  if (detalle) body.appendChild(el('span', null, detalle));
+  card.appendChild(ic); card.appendChild(body);
+  function bye() { card.classList.add('bye'); setTimeout(function () { card.remove(); }, 260); }
+  card.onclick = bye;
+  stack.appendChild(card);
+  setTimeout(bye, 7000);
+  chime();
+}
+// Para mods y admin: avisa cuando entra algo nuevo a revisar. El primer
+// snapshot no avisa (es lo que ya había); después, cada id que no se vio.
+let vistosPendientes = null;
+function avisarNuevos(items) {
+  const pendientes = (items || []).filter(function (it) { return it.status === 'pending_review'; });
+  const ahora = new Set(pendientes.map(function (it) { return it.id; }));
+  if (vistosPendientes) {
+    const nuevos = pendientes.filter(function (it) { return !vistosPendientes.has(it.id); });
+    if (nuevos.length === 1) {
+      const n = nuevos[0];
+      notify('Nuevo video para revisar', 'de ' + n.submitter_login + (n.title ? ': ' + n.title : ''));
+    } else if (nuevos.length > 1) {
+      notify(nuevos.length + ' videos nuevos para revisar',
+        nuevos.map(function (n) { return n.submitter_login; }).join(', '));
+    }
+    nuevos.forEach(function (n) { ahora.add(n.id); });
+  }
+  vistosPendientes = ahora;
+}
+(function wireBell() {
+  const b = $('#bellBtn');
+  if (!b) return;
+  paintBell();
+  b.onclick = function () {
+    notifMuted = !notifMuted;
+    try { localStorage.setItem(NOTIF_KEY, notifMuted ? '1' : '0'); } catch (_) {}
+    paintBell();
+    if (!notifMuted) { unlockAudio(); notify('Avisos activados', 'Así se ven y suenan.'); }
+    else toast('Avisos silenciados.');
+  };
+})();
 `;
 
 // ── /submit ──────────────────────────────────────────────────────────────────
@@ -800,6 +930,37 @@ const VISTA = {
   failed:         ['bad',  'Falló',       'No se pudo preparar el video'],
   cleared:        ['',     'Sin usar',    'La cola se limpió al terminar el stream'],
 };
+
+// ── Cooldown: cuenta regresiva en el botón y aviso cuando termina ──
+// El fin lo dice el servidor (cooldown_until + server_time); acá solo se
+// cuenta. Se avisa una sola vez por espera, y nunca si al abrir la página ya
+// había pasado: no hay nada que esperar en ese caso.
+let cdEnd = null, cdTimer = null, cdActivo = false;
+function pintarCooldown(left) {
+  const btn = $('#sendBtn');
+  if (!btn) return;
+  btn.disabled = left > 0;
+  btn.textContent = left > 0 ? 'Podés mandar otro en ' + left + ' s' : 'Enviar a la cola';
+}
+function cdTick() {
+  clearTimeout(cdTimer);
+  const left = Math.ceil((cdEnd - Date.now()) / 1000);
+  if (left <= 0) {
+    pintarCooldown(0);
+    if (cdActivo) { cdActivo = false; notify('Ya podés mandar otro link', 'Se terminó tu tiempo de espera.'); }
+    return;
+  }
+  pintarCooldown(left);
+  cdTimer = setTimeout(cdTick, 1000);
+}
+function armarCooldown(data) {
+  if (!data || !data.cooldown_until || !data.server_time) return;
+  const left = data.cooldown_until - data.server_time;
+  if (left <= 0) { if (!cdActivo) pintarCooldown(0); return; }
+  cdEnd = Date.now() + left;
+  cdActivo = true;
+  cdTick();
+}
 
 (async function () {
   if (!ch) {
@@ -933,6 +1094,7 @@ const VISTA = {
   async function refresh() {
     const data = await api('/api/mine?ch=' + encodeURIComponent(ch));
     ultimos = data.items;
+    armarCooldown(data);
     $('#mineHead').hidden = !ultimos.length;
     $('#mineCount').textContent = ultimos.length
       ? (ultimos.length === 1 ? '1 link' : ultimos.length + ' links')
@@ -966,7 +1128,11 @@ const VISTA = {
       $('#url').value = '';
       show($('#msg'), '', '');
       toast('Tu link entró a la cola. Un mod lo va a revisar.');
-      refresh();
+      // refresh() arma la cuenta regresiva del cooldown y deja el botón como
+      // corresponda; habilitarlo acá a ciegas lo pisaría.
+      await refresh();
+      if (!cdActivo) btn.disabled = false;
+      return;
     } catch (e) { show($('#msg'), e.message, 'err'); }
     btn.disabled = false;
   };
@@ -1226,7 +1392,7 @@ const PILL = {
     ws.onopen = () => { backoff = 1000; };
     ws.onmessage = (ev) => {
       let m; try { m = JSON.parse(ev.data); } catch (_) { return; }
-      if (m.type === 'queue') render(m.items, m.waiting || 0);
+      if (m.type === 'queue') { render(m.items, m.waiting || 0); avisarNuevos(m.items); }
       else if (m.type === 'agent') agentPill(m);
     };
     ws.onclose = () => { setTimeout(connect, backoff); backoff = Math.min(30000, backoff * 2); };
@@ -1817,7 +1983,7 @@ const PILL = {
     ws.onopen = () => { backoff = 1000; };
     ws.onmessage = (ev) => {
       let m; try { m = JSON.parse(ev.data); } catch (_) { return; }
-      if (m.type === 'queue') { render(m.items, m.waiting || 0); cargarStats(); }
+      if (m.type === 'queue') { render(m.items, m.waiting || 0); cargarStats(); avisarNuevos(m.items); }
       else if (m.type === 'agent') agentPill(m);
     };
     ws.onclose = () => { setTimeout(connect, backoff); backoff = Math.min(30000, backoff * 2); };

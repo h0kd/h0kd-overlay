@@ -363,7 +363,18 @@ app.get('/api/mine', async (c) => {
 
   const fotos = await q.picsFor(c.env.DB, (res.results ?? []).map((r) => r.decided_by));
 
+  // Hasta cuándo dura el cooldown de esta persona, para que la página muestre
+  // la cuenta regresiva y avise cuando puede mandar otro. Va junto con la hora
+  // del servidor: el reloj del viewer no es de fiar.
+  const settings = await q.getSettings(c.env.DB, channel.channel_id);
+  const state = await q.submitterState(c.env.DB, channel.channel_id, session.uid);
+  const cooldownUntil = state.last_submit_at === null
+    ? null
+    : state.last_submit_at + settings.cooldown_seconds * 1000;
+
   return c.json({
+    server_time: Date.now(),
+    cooldown_until: cooldownUntil,
     items: (res.results ?? []).map((r) => ({
       ...r,
       status_label: STATUS_LABEL[r.status] ?? r.status,
