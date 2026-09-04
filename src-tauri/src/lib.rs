@@ -63,11 +63,11 @@ fn default_config() -> Value {
         "rewards": {},
         "safeZones": { "exclude": [] },
         "canvas": { "width": 1920, "height": 1080 },
-        // La app experimental existe para Video Requests: una instalación
-        // nueva arranca con el módulo prendido y apuntando al Worker de h0kd.
-        // Apagarlo sigue siendo un click en la pestaña; y una config que ya
-        // existe no se toca (esto solo se escribe la primera vez).
-        "videoRequests": { "enabled": true, "workerOrigin": video_requests::DEFAULT_WORKER_ORIGIN }
+        // El módulo viene APAGADO: cada canal lo activa con el switch si
+        // quiere (decisión de h0kd). Lo que sí viene puesto es el Worker por
+        // defecto, así activar + emparejar no requiere tocar AppData. Esto se
+        // escribe solo la primera vez; una config existente no se toca.
+        "videoRequests": { "enabled": false, "workerOrigin": video_requests::DEFAULT_WORKER_ORIGIN }
     })
 }
 

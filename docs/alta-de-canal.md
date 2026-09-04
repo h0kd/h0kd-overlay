@@ -33,12 +33,12 @@ cada canal comparte sus links con `?ch=<login>` (están en su `/admin`).
 
 1. Instalar la app desde la release de GitHub (`exp-v*`, canal experimental).
    Se instala al lado de la estable, con carpeta de datos y puerto propios.
-2. Abrirla. Desde la exp-v0.2.14 la pestaña **Video Requests** ya viene
-   activa y apuntando a `https://videos.h0kd.dev`; no hay que tocar nada
-   en AppData. (Con una versión anterior, o si la config ya existía con el
-   módulo apagado: marcar **Activar módulo**, Guardar y reiniciar la app.)
-3. Si la app se instaló antes de la exp-v0.2.14 y no empareja, revisar que
-   `%APPDATA%\Stream Overlay Experimental\config.json` tenga
+2. Abrirla, ir a la pestaña **Video Requests**, marcar **Activar módulo**,
+   Guardar y reiniciar la app. El módulo viene apagado a propósito: cada
+   canal lo prende si quiere. Desde la exp-v0.2.14 ya apunta solo a
+   `https://videos.h0kd.dev`; no hay que tocar nada en AppData.
+3. Solo si la app se instaló antes de la exp-v0.2.14 y no empareja: revisar
+   que `%APPDATA%\Stream Overlay Experimental\config.json` tenga
    `"workerOrigin": "https://videos.h0kd.dev"` dentro de `videoRequests`.
 4. **Instalar lo que falte**: baja yt-dlp y ffmpeg (~110 MB). El botón dice
    "Bajando…" hasta que termina.
