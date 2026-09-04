@@ -1,0 +1,26 @@
+[package]
+name = "video-requests-core"
+version = "0.1.0"
+edition = "2021"
+description = "Pipeline de Video Requests: metadata, descarga, validacion y recodificacion"
+authors = ["h0kd"]
+
+# SIN dependencias de Tauri, a proposito: todo lo que hay aca se puede correr y
+# probar desde una terminal, que es donde vive el riesgo de este modulo.
+[lib]
+name = "video_requests_core"
+path = "src/lib.rs"
+
+[[bin]]
+name = "vrc-cli"
+path = "src/bin/vrc-cli.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["process", "rt-multi-thread", "macros", "time", "fs", "io-util"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream"] }
+futures-util = "0.3"
+sha2 = "0.10"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+uuid = { version = "1", features = ["v4"] }

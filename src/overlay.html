@@ -50,6 +50,50 @@
     @keyframes outSlideLeft  { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateX(-50px); } }
     @keyframes outSlideRight { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateX(50px); } }
 
+    /* ── Video Requests ──────────────────────────────────────────────────────
+       Contenedor propio, aparte del spawn de los canjes. El video se ubica y
+       dimensiona por JS (ver placeRequest) recién cuando se conoce su
+       proporción real: así conviven Reels verticales 9:16 con clips 16:9 sin
+       deformar ninguno, y la posición (fija o al azar) se calcula con el
+       tamaño que de verdad va a ocupar. */
+    #vrStage {
+      position: absolute;
+      inset: 0;
+      display: none;
+      pointer-events: none;
+    }
+    #vrStage.on { display: block; }
+    #vrStage video {
+      position: absolute;
+      object-fit: contain;
+      border-radius: 10px;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, .55);
+      /* Invisible hasta que placeRequest lo ubica: si no, un frame en (0,0). */
+      visibility: hidden;
+    }
+    #vrStage video.placed { visibility: visible; }
+    /* Quién lo pidió, arriba del video. Se ubica junto con el video en
+       placeRequest; hasta entonces no se ve, igual que él. */
+    #vrStage .vr-who {
+      position: absolute;
+      visibility: hidden;
+      max-width: 100%;
+      box-sizing: border-box;
+      padding: 6px 14px;
+      border-radius: 999px;
+      background: rgba(14, 14, 16, .82);
+      color: #efeff1;
+      font: 600 22px/1.2 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, .6);
+      box-shadow: 0 4px 18px rgba(0, 0, 0, .45);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    #vrStage .vr-who.placed { visibility: visible; }
+    #vrStage .vr-who small { font-weight: 400; opacity: .75; margin-right: .35em; }
+    #vrStage .vr-who b { color: #bf94ff; }
+
     /* ── Setup status badge ──────────────────────────────────────────────────
        Visible ONLY while configuring (page load → first successful connection).
        After the overlay connects once it is removed for good, so it can never
@@ -84,11 +128,14 @@
 </head>
 <body>
   <div id="overlay"></div>
+  <div id="vrStage"></div>
   <div id="setupStatus"><span class="dot"></span><span id="setupStatusText">Conectando al servidor…</span></div>
 
   <script>
     // ── Constants ────────────────────────────────────────────────────────────
-    const WS_URL              = 'ws://localhost:3001/';
+    // Derived from wherever the overlay was served, so the same file works
+    // unchanged if the port ever changes.
+    const WS_URL              = 'ws://' + location.host + '/';
     const WS_RECONNECT_DELAY  = 3000;  // ms
     const MAX_POS_ATTEMPTS    = 30;
     const CONFIG_PATH         = './config.json';
@@ -115,14 +162,208 @@
       slideRight: 'outSlideRight 0.35s ease-in forwards'
     };
 
+    // ── Video Requests ───────────────────────────────────────────────────────
+    // El agente necesita saber cuándo la pantalla quedó libre para largar el
+    // siguiente pedido. Se lo decimos nosotros en vez de que lo adivine por
+    // duración: un video que falla al cargar termina en 0s y uno con audio
+    // desincronizado dura más de lo que decía su metadata.
+    let vrPlaying = null;        // itemId en pantalla, o null
+    let vrLastBusy = null;       // último valor reportado, para no repetir
+
+    function overlayBusy() {
+      return document.querySelectorAll('.video-spawn').length > 0 || vrPlaying !== null;
+    }
+
+    function reportBusy() {
+      const busy = overlayBusy();
+      if (busy === vrLastBusy) return;
+      vrLastBusy = busy;
+      wsSend({ type: 'overlayBusy', busy: busy });
+    }
+
+    function wsSend(obj) {
+      if (!ws || ws.readyState !== 1) return;
+      try { ws.send(JSON.stringify(obj)); } catch (_) {}
+    }
+
+    // Dónde y de qué tamaño salen los pedidos. Vive en config.json bajo
+    // `videoRequests` (se edita en la pestaña Video Requests del panel) y sin
+    // nada configurado da lo de siempre: centrado, al 62% de la pantalla.
+    function vrLayout() {
+      const c = config.videoRequests || {};
+      const cW = config.canvas.width;
+      const cH = config.canvas.height;
+      const pct = (typeof c.sizePct === 'number') ? Math.max(5, Math.min(100, c.sizePct)) : 62;
+      return {
+        random: c.position === 'random',
+        cx: (typeof c.x === 'number') ? c.x : cW / 2,
+        cy: (typeof c.y === 'number') ? c.y : cH / 2,
+        pct: pct,
+        respectZones: c.respectSafeZones !== false,
+        animIn: c.animIn || 'pop',
+        animOut: c.animOut || 'pop',
+        // Rótulo con quién lo pidió, arriba del video. Prendido salvo que se apague.
+        showSubmitter: c.showSubmitter !== false,
+        // Los pedidos salían siempre al 100% y en stream se escuchaban muy
+        // fuerte al lado de todo lo demás. Mismo rango que los canjes.
+        volume: (typeof c.volume === 'number') ? Math.min(1, Math.max(0, c.volume)) : 0.8
+      };
+    }
+
+    // Ubica y dimensiona el video una vez conocida su proporción real.
+    // 100% = el video llena la pantalla sin recortarse, la misma regla que el
+    // tamaño de los canjes, así el mismo % se ve igual en vertical y horizontal.
+    function placeRequest(video, vw, vh, who) {
+      const L = vrLayout();
+      const cW = config.canvas.width;
+      const cH = config.canvas.height;
+      const fs = Math.min(cW / vw, cH / vh) * L.pct / 100;
+      const fw = Math.max(1, Math.round(vw * fs));
+      const fh = Math.max(1, Math.round(vh * fs));
+      let x, y;
+      if (L.random) {
+        const p = randomPosition(fw, fh, L.respectZones);
+        x = p.x; y = p.y;
+      } else {
+        // La posición fija es el CENTRO del video: así la misma elección
+        // sirve para un Reel y para un clip aunque ocupen cajas distintas.
+        x = Math.round(L.cx - fw / 2);
+        y = Math.round(L.cy - fh / 2);
+      }
+      x = Math.max(0, Math.min(x, cW - fw));
+      y = Math.max(0, Math.min(y, cH - fh));
+      Object.assign(video.style, {
+        left: x + 'px', top: y + 'px', width: fw + 'px', height: fh + 'px'
+      });
+      if (L.animIn !== 'none' && IN_ANIMS[L.animIn]) video.style.animation = IN_ANIMS[L.animIn];
+      video.classList.add('placed');
+      if (who) {
+        // Arriba del video, alineado a su borde izquierdo y no más ancho que
+        // él. Si el video está pegado al borde superior, va adentro.
+        const gap = 10;
+        const wh = who.offsetHeight || 40;
+        const top = y - wh - gap >= 0 ? y - wh - gap : y + gap;
+        Object.assign(who.style, { left: x + 'px', top: top + 'px', maxWidth: fw + 'px' });
+        if (L.animIn !== 'none' && IN_ANIMS[L.animIn]) who.style.animation = IN_ANIMS[L.animIn];
+        who.classList.add('placed');
+      }
+      log(`  → pos=(${x},${y}) ${fw}×${fh} ${L.random ? 'al azar' : 'fija'} ${L.pct}%`);
+    }
+
+    function playRequest(data) {
+      const stage = document.getElementById('vrStage');
+      stage.textContent = '';
+      stage.classList.add('on');
+
+      const video = document.createElement('video');
+      video.src = data.src;
+      video.autoplay = true;
+      video.playsInline = true;
+      video.volume = vrLayout().volume;
+
+      // Quién lo pidió. El nombre viene del agente (lo puso el DO al aprobar);
+      // se arma con nodos, nunca con innerHTML: es texto de un viewer.
+      let who = null;
+      if (vrLayout().showSubmitter && data.submitter) {
+        who = document.createElement('div');
+        who.className = 'vr-who';
+        const pre = document.createElement('small');
+        pre.textContent = 'pedido de';
+        const name = document.createElement('b');
+        name.textContent = data.submitter;
+        who.appendChild(pre);
+        who.appendChild(name);
+      }
+
+      let done = false;
+      let guard = null;
+      const started = Date.now();
+
+      function finish(reason) {
+        if (done) return;
+        done = true;
+        clearTimeout(guard);
+        const L = vrLayout();
+        const out = OUT_ANIMS[L.animOut];
+        const animated = L.animOut !== 'none' && !!out && video.classList.contains('placed');
+        if (animated) {
+          video.style.animation = out;
+          if (who) who.style.animation = out;
+        }
+        setTimeout(function () {
+          // Solo si nadie puso otro pedido en el medio.
+          if (video.parentNode === stage) {
+            stage.classList.remove('on');
+            stage.textContent = '';
+          }
+        }, animated ? REMOVE_ANIM_BUDGET : 0);
+        const seconds = (Date.now() - started) / 1000;
+        vrPlaying = null;
+        wsSend({ type: 'requestEnded', itemId: data.itemId, seconds: seconds, reason: reason });
+        reportBusy();
+      }
+
+      // Red de contención: si el archivo no dispara 'ended' (códec raro, red
+      // cortada), el pedido no puede quedarse trabado para siempre bloqueando
+      // la cola entera.
+      //
+      // El plazo NO puede ser fijo. /admin deja aprobar hasta 120 s, así que
+      // un tope de 60 cortaría el video por la mitad, en pantalla y en vivo, y
+      // encima lo reportaría como error. Arranca corto —lo que tarda en abrir
+      // un mp4 que ya está en disco— y se rearma con la duración real apenas
+      // se conoce.
+      function armGuard(ms) {
+        clearTimeout(guard);
+        guard = setTimeout(function () {
+          warn('Video request sin \'ended\'; se cierra por tiempo:', data.itemId);
+          finish('error');
+        }, ms);
+      }
+      armGuard(30000);
+
+      video.addEventListener('loadedmetadata', function () {
+        const d = isFinite(video.duration) && video.duration > 0 ? video.duration : 0;
+        armGuard(Math.round((d + 15) * 1000));
+        placeRequest(video, video.videoWidth || 16, video.videoHeight || 9, who);
+      });
+
+      video.addEventListener('ended', function () { finish('ended'); });
+      video.addEventListener('error', function () {
+        err('No se pudo reproducir el pedido:', data.src);
+        finish('error');
+      });
+
+      stage.appendChild(video);
+      if (who) stage.appendChild(who);
+      // OBS deja arrancar con sonido sin que nadie toque nada; un navegador
+      // normal (alguien abriendo el overlay en Chrome para mirarlo) lo bloquea.
+      // Sin este catch, ese bloqueo se vería como un cuadro congelado hasta que
+      // saltara el plazo, con la cola detrás esperando.
+      const playing = video.play();
+      if (playing && playing.catch) {
+        playing.catch(function (e) {
+          err('No se pudo arrancar el pedido (¿autoplay bloqueado?):', e);
+          finish('error');
+        });
+      }
+
+      vrPlaying = data.itemId;
+      wsSend({ type: 'requestStarted', itemId: data.itemId });
+      reportBusy();
+      log('Video request en pantalla:', data.itemId);
+    }
+
     // ── State ────────────────────────────────────────────────────────────────
     let config = {
       rewards:   {},
       safeZones: { exclude: [] },
-      canvas:    { width: 1920, height: 1080 }
+      canvas:    { width: 1920, height: 1080 },
+      videoRequests: {}
     };
     let ws = null;
     let wsReconnectTimer = null;
+    // `boot` de la app en la primera conexión. Si cambia, la app se reinició.
+    let bootSeen = null;
 
     // ── Setup status badge ────────────────────────────────────────────────────
     // Shows "Conectando…" from load until the first successful connection, then
@@ -162,7 +403,8 @@
         config = {
           rewards:   raw.rewards   || {},
           safeZones: raw.safeZones || { exclude: [] },
-          canvas:    raw.canvas    || { width: 1920, height: 1080 }
+          canvas:    raw.canvas    || { width: 1920, height: 1080 },
+          videoRequests: raw.videoRequests || {}
         };
         const w = config.canvas.width;
         const h = config.canvas.height;
@@ -267,7 +509,10 @@
         if (cleaning) return;   // 'ended' + safety timer pueden dispararse juntos
         cleaning = true;
         clearTimeout(safetyTimer);
-        const removeEl = () => { if (wrapper.parentNode) wrapper.remove(); };
+        const removeEl = () => {
+          if (wrapper.parentNode) wrapper.remove();
+          reportBusy();
+        };
         const out = OUT_ANIMS[animOut];
         if (animOut !== 'none' && out) {
           wrapper.style.animation = out;
@@ -288,6 +533,7 @@
 
       wrapper.appendChild(video);
       document.getElementById('overlay').appendChild(wrapper);
+      reportBusy();
     }
 
     // Exposed for manual console testing (step 8.3 of planning doc)
@@ -308,6 +554,9 @@
         logWS('Connected to admin server');
         clearTimeout(wsReconnectTimer);
         setupBadge.connected();
+        // El agente puede haberse reiniciado y no saber qué hay en pantalla.
+        vrLastBusy = null;
+        reportBusy();
       };
 
       ws.onmessage = (ev) => {
@@ -316,10 +565,23 @@
         const event = msg.event;
         const data  = msg.data;
         if (!event || !data) return;
+        if (event.source === 'System' && event.type === 'Connected') {
+          // La app se reinició (quizá actualizada): este HTML puede ser viejo.
+          // Recargar trae el overlay que sirve la app de ahora, con su config.
+          if (data.boot && bootSeen && bootSeen !== data.boot) {
+            log('La app se reinició; se recarga el overlay');
+            location.reload();
+            return;
+          }
+          if (data.boot) bootSeen = data.boot;
+          return;
+        }
         if (event.source === 'General' && event.type === 'Custom'
             && data.action === 'playVideo' && data.reward) {
           log(`playVideo: "${data.reward}" por ${data.user || '?'}`);
           spawnVideo(data.reward);
+        } else if (event.source === 'VideoRequests' && data.action === 'playRequest') {
+          playRequest(data);
         } else if (data.action === 'reloadConfig') {
           log('Config reload solicitado por el panel');
           loadConfig();

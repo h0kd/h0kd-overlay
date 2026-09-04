@@ -42,7 +42,7 @@
     padding: 0 20px;
     gap: 10px;
   }
-  header h1 { font-size: 15px; font-weight: 700; flex: 1; }
+  header h1 { font-size: 15px; font-weight: 700; flex: none; }
   header h1 span { color: var(--accent); }
   .app-icon {
     width: 26px; height: 26px; border-radius: 6px; flex: none;
@@ -192,6 +192,132 @@
     margin-top: 6px;
   }
   .canvas-row label { color: var(--muted); font-size: 12px; display: flex; align-items: center; gap: 5px; }
+
+  /* ── Pestañas: las dos mitades de la app viven separadas ── */
+  #viewTabs { display: flex; gap: 4px; margin-left: 8px; }
+  .view-tab {
+    background: none; border: none; color: var(--muted);
+    font-family: inherit; font-size: 13px; font-weight: 600;
+    padding: 7px 12px; border-radius: 6px; cursor: pointer;
+    transition: background .15s, color .15s;
+  }
+  .view-tab:hover { background: var(--s2); color: var(--text); }
+  .view-tab.active {
+    background: var(--s2); color: var(--text);
+    box-shadow: inset 0 -2px 0 var(--accent);
+  }
+  .hdr-spacer { flex: 1; }
+  /* `contents` deja a sus hijos como flex items directos del header, para
+     que agrupar no cambie el layout — y ocultarlos sea un solo display. */
+  #overlayTools { display: contents; }
+
+  /* ── Video Requests ── */
+  main.view-vr { grid-template-columns: 1fr; }
+  #vrView { overflow-y: auto; padding: 22px 28px; }
+  #vrView h2 { font-size: 18px; display: flex; align-items: center; gap: 10px; }
+  .vr-lead {
+    color: var(--muted); font-size: 13px; line-height: 1.6;
+    margin-top: 10px; max-width: 640px;
+  }
+  /* Dos columnas para no tener que scrollear: a la izquierda las tarjetas de
+     estado y opciones (módulo, emparejar, entorno, preview) y a la derecha
+     "En pantalla", que es la grande. Con la ventana angosta vuelve a una. */
+  .vr-grid {
+    display: grid; grid-template-columns: minmax(240px, 268px) minmax(240px, 268px) minmax(0, 1fr);
+    gap: 16px; align-items: start; margin-top: 16px; max-width: 1180px;
+  }
+  .vr-col { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+  /* Angosta: estado y entorno arriba, "En pantalla" abajo a todo el ancho. */
+  @media (max-width: 1150px) {
+    .vr-grid { grid-template-columns: 1fr 1fr; }
+    .vr-grid > .vr-col:nth-child(3) { grid-column: 1 / -1; }
+  }
+  @media (max-width: 900px) { .vr-grid { grid-template-columns: 1fr; } }
+  .vr-card {
+    background: var(--s1); border: 1px solid var(--border);
+    border-radius: 10px; padding: 16px 18px;
+  }
+  .vr-card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .vr-card h3 { font-size: 13px; margin-bottom: 10px; }
+  .vr-card ul { margin: 0 0 4px 18px; color: var(--muted); font-size: 12.5px; line-height: 1.9; }
+  .vr-card code { background: var(--s2); padding: 1px 5px; border-radius: 4px; font-size: 11.5px; }
+  .vr-foot { color: var(--muted); font-size: 12px; margin-top: 12px; }
+  .vr-row { display: flex; align-items: center; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
+  .vr-row .vr-btn { white-space: nowrap; }
+  .vr-row-2 .vol-value { min-width: 36px; }
+  /* En "En pantalla" las filas son sliders y selects: no se envuelven. */
+  #vrLayoutCard .vr-row { flex-wrap: nowrap; }
+  #vrLayoutCard .vr-label { min-width: 0; white-space: nowrap; }
+  #vrLayoutCard select { min-width: 0; flex: 1; }
+  .vr-row input[type=text] {
+    flex: 1; background: var(--s2); border: 1px solid var(--border); color: var(--text);
+    border-radius: 6px; padding: 9px 11px; font: inherit; letter-spacing: .1em;
+    text-transform: uppercase;
+  }
+  .vr-row input:focus { outline: none; border-color: var(--accent); }
+  .vr-btn {
+    background: var(--accent); color: #fff; border: none; border-radius: 6px;
+    padding: 9px 16px; font: inherit; font-weight: 600; cursor: pointer;
+  }
+  .vr-btn:hover:not(:disabled) { background: var(--accentH); }
+  .vr-btn:disabled { opacity: .45; cursor: default; }
+  .vr-btn.secondary { background: var(--s2); border: 1px solid var(--border); color: var(--text); padding: 8px 12px; font-size: 12.5px; }
+  .vr-kv { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0;
+    border-top: 1px solid var(--border); font-size: 12.5px; }
+  .vr-kv:first-of-type { border-top: none; }
+  .vr-kv span:first-child { color: var(--muted); }
+  .vr-err {
+    margin-top: 12px; font-size: 12.5px; padding: 9px 12px; border-radius: 6px;
+    background: #3a1212; color: #ffbcbc; line-height: 1.5;
+  }
+  .vr-state {
+    font-size: 11px; padding: 3px 10px; border-radius: 999px;
+    background: var(--s2); color: var(--muted); white-space: nowrap;
+  }
+  .vr-state.on   { background: #003a1a; color: var(--green); }
+  .vr-state.warn { background: #3a2a00; color: #f0a000; }
+  .exp-tag {
+    font-size: 10px; letter-spacing: .04em; text-transform: uppercase;
+    color: var(--accent); border: 1px solid var(--accent);
+    border-radius: 4px; padding: 1px 5px; opacity: .85;
+  }
+  .vr-toggle {
+    display: flex; align-items: center; gap: 8px;
+    color: var(--text); font-size: 13px; cursor: pointer; margin-top: 4px;
+  }
+  .vr-note { font-size: 11px; color: var(--muted); line-height: 1.45; margin-top: 6px; }
+  .vr-note.warn { color: #f0a000; }
+  .vr-note.on   { color: var(--green); }
+  /* Posición y tamaño en pantalla: un lienzo a escala con las safe zones y
+     una caja arrastrable que representa el video. */
+  .vr-stage {
+    position: relative; width: 100%; max-width: 480px; aspect-ratio: 16 / 9;
+    background: var(--s2); border: 1px solid var(--border); border-radius: 6px;
+    overflow: hidden; margin-top: 12px; user-select: none;
+  }
+  .vr-stage .zone {
+    position: absolute; background: rgba(255,80,80,.16);
+    outline: 1px dashed rgba(255,80,80,.6); pointer-events: none;
+  }
+  .vr-stage .box {
+    position: absolute; background: rgba(145,71,255,.28); outline: 2px solid var(--accent);
+    border-radius: 3px; display: grid; place-items: center;
+    font-size: 11px; color: var(--text); cursor: grab; touch-action: none;
+  }
+  .vr-stage .box:active { cursor: grabbing; }
+  .vr-stage .box.locked { cursor: default; outline-style: dashed; opacity: .75; }
+  .vr-seg { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+  .vr-seg button {
+    background: var(--s2); color: var(--muted); border: none; padding: 5px 10px;
+    font: inherit; font-size: 12px; cursor: pointer;
+  }
+  .vr-seg button.active { background: var(--accent); color: #fff; }
+  .vr-label { min-width: 84px; color: var(--muted); font-size: 12.5px; }
+  .vr-card select {
+    background: var(--s2); border: 1px solid var(--border); color: var(--text);
+    border-radius: 6px; padding: 7px 9px; font: inherit; font-size: 12.5px;
+  }
+  .vr-card input[type=range] { flex: 1; min-width: 0; }
 
   /* ── Editor panel ── */
   #editor {
@@ -687,7 +813,7 @@
       </div>
       <div class="onb-step">
         <span class="onb-num">3</span>
-        <div class="onb-step-body"><b>Conectá OBS.</b> Agregá un <b>Browser Source</b> con la URL <code>http://localhost:3001/overlay</code> (la copiás desde el pie de la app).</div>
+        <div class="onb-step-body"><b>Conectá OBS.</b> Agregá un <b>Browser Source</b> con la URL <code id="onbOverlayUrl">http://localhost:3001/overlay</code> (la copiás desde el pie de la app).</div>
       </div>
     </div>
     <button class="onb-btn" id="onbClose">¡Empezar!</button>
@@ -697,10 +823,18 @@
 <header>
   <img class="app-icon" id="appIcon" src="assets/h0kdSPIN.webp" alt="" title="Ver guía de inicio" />
   <h1>Stream <span>Overlay</span></h1>
+  <nav id="viewTabs">
+    <button class="view-tab active" data-view="overlay">Overlay</button>
+    <button class="view-tab" data-view="vr">Video Requests</button>
+  </nav>
+  <span class="hdr-spacer"></span>
   <span id="statusBadge">Sin cambios</span>
   <button class="hdr-btn" id="openFolderBtn" title="Abrir carpeta con config.json y videos/"><svg class="icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>Carpeta</button>
-  <select id="testRewardSel"></select>
-  <button id="testBtn"><svg class="icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="6 3 20 12 6 21 6 3"/></svg>Probar</button>
+  <button class="hdr-btn" id="openLogsBtn" title="Abrir la carpeta de logs (para mandarlos si algo falló)"><svg class="icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v5h5"/><path d="M8 13h8"/><path d="M8 17h5"/></svg>Logs</button>
+  <span id="overlayTools">
+    <select id="testRewardSel"></select>
+    <button id="testBtn"><svg class="icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="6 3 20 12 6 21 6 3"/></svg>Probar</button>
+  </span>
   <button class="hdr-btn" id="discardBtn" title="Descartar todos los cambios sin guardar" disabled><svg class="icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5 5.5 5.5 0 0 1-5.5 5.5H11"/></svg>Descartar</button>
   <button id="saveBtn" disabled>Guardar</button>
 </header>
@@ -766,6 +900,136 @@
     </div>
     <div id="editorForm" style="display:none"></div>
   </section>
+
+  <section id="vrView" style="display:none">
+    <h2>Video Requests <span class="exp-tag">beta</span></h2>
+    <p class="vr-lead" style="max-width:none;margin-top:6px">
+      Los viewers mandan links, los mods aprueban desde la web y lo aprobado sale en el overlay.
+      Apagado, la app funciona igual que siempre: solo canjes.
+    </p>
+
+    <div class="vr-grid">
+    <div class="vr-col">
+
+    <div class="vr-card">
+      <div class="vr-card-head">
+        <label class="vr-toggle">
+          <input type="checkbox" id="vrEnabled" />
+          <span>Activar módulo</span>
+        </label>
+        <span class="vr-state" id="vrState">—</span>
+      </div>
+      <div class="vr-note" id="vrNote"></div>
+    </div>
+
+    <div class="vr-card" id="vrPairCard" style="display:none">
+      <div class="vr-card-head">
+        <h3 style="margin:0">Emparejar con tu canal</h3>
+        <span class="vr-state" id="vrConn">—</span>
+      </div>
+      <p class="vr-lead" style="margin-top:8px" id="vrPairHelp">
+        Entrá a <code>/admin</code> con la cuenta del canal, generá un código y pegalo acá.
+      </p>
+      <div class="vr-row" id="vrPairRow">
+        <input type="text" id="vrCode" placeholder="A1B2C3D4" maxlength="8" autocomplete="off" />
+        <button class="vr-btn" id="vrPairBtn">Emparejar</button>
+      </div>
+      <div class="vr-row" id="vrUnpairRow" style="display:none">
+        <button class="vr-btn" id="vrReconnectBtn" style="display:none">Reconectar</button>
+        <button class="vr-btn secondary" id="vrUnpairBtn">Desemparejar</button>
+      </div>
+      <div class="vr-err" id="vrError" style="display:none"></div>
+    </div>
+
+    <div class="vr-card" id="vrPreviewCard">
+      <div class="vr-card-head">
+        <label class="vr-toggle" style="margin:0">
+          <input type="checkbox" id="vrlPreview" />
+          <span>Ventana de preview (para VRChat)</span>
+        </label>
+      </div>
+      <p class="vr-lead" style="margin-top:8px">
+        Una ventana aparte con los pedidos <b>sin sonido</b>, a la vez que salen en OBS.
+        En VRChat, capturala con XSOverlay para verlos en grande.
+      </p>
+      <p class="vr-note" id="vrlPreviewNote">
+        Al instante, sin guardar. Se abre sola al iniciar la app; cerrarla con la X la desmarca.
+      </p>
+    </div>
+
+    </div>
+    <div class="vr-col">
+
+    <div class="vr-card" id="vrEnvCard" style="display:none">
+      <h3>Entorno</h3>
+      <div class="vr-kv"><span>yt-dlp</span><span id="vrYtdlp">—</span></div>
+      <div class="vr-kv"><span>ffmpeg / ffprobe</span><span id="vrBins">—</span></div>
+      <div class="vr-kv"><span>Cookies de Instagram</span><span id="vrCookies">—</span></div>
+      <div class="vr-kv"><span>En cola</span><span id="vrQueue">—</span></div>
+      <div class="vr-row">
+        <button class="vr-btn secondary" id="vrInstallBtn">Instalar lo que falte</button>
+        <button class="vr-btn secondary" id="vrUpdateBtn">Actualizar yt-dlp</button>
+        <button class="vr-btn secondary" id="vrCookiesBtn">Abrir carpeta de cookies</button>
+      </div>
+      <p class="vr-foot">
+        Instagram: cookies de una cuenta <b>dedicada</b> (nunca la personal), en formato
+        Netscape, como <code>instagram-cookies.txt</code>.
+      </p>
+    </div>
+
+    </div>
+    <div class="vr-col">
+
+    <div class="vr-card" id="vrLayoutCard">
+      <h3>En pantalla</h3>
+      <p class="vr-lead" style="margin-top:0">
+        Dónde y de qué tamaño salen los pedidos. Aparte de los canjes, que se configuran por reward.
+      </p>
+      <div class="vr-row">
+        <span class="vr-label">Posición</span>
+        <select id="vrlMode">
+          <option value="fixed">Fija (la elegís abajo)</option>
+          <option value="random">Al azar, como los canjes</option>
+        </select>
+        <span style="flex:1"></span>
+        <span class="vr-seg" id="vrlOri" title="Proporción del video de ejemplo, solo para el preview">
+          <button type="button" data-ori="h" class="active">16:9</button>
+          <button type="button" data-ori="v">9:16</button>
+        </span>
+      </div>
+      <div class="vr-stage" id="vrlStage"><div class="box" id="vrlBox"></div></div>
+      <div class="size-readout" id="vrlReadout"></div>
+      <div class="vr-row vr-row-2">
+        <span class="vr-label">Tamaño</span>
+        <input type="range" id="vrlSize" min="5" max="100" step="1" />
+        <span class="vol-value" id="vrlSizePct">62%</span>
+        <span class="vr-label" style="min-width:0;margin-left:14px">Volumen</span>
+        <input type="range" id="vrlVolume" min="0" max="100" step="5" />
+        <span class="vol-value" id="vrlVolumePct">80%</span>
+      </div>
+      <div class="vr-row">
+        <span class="vr-label">Entrada</span>
+        <select id="vrlAnimIn"></select>
+        <span class="vr-label" style="min-width:0;margin-left:8px">Salida</span>
+        <select id="vrlAnimOut"></select>
+      </div>
+      <label class="vr-toggle" style="margin-top:12px">
+        <input type="checkbox" id="vrlZones" />
+        <span>Al azar: respetar safe zones (no aparecer sobre la webcam u otras zonas)</span>
+      </label>
+      <label class="vr-toggle">
+        <input type="checkbox" id="vrlWho" />
+        <span>Mostrar quién lo pidió, arriba del video ("pedido de <b>usuario</b>")</span>
+      </label>
+      <p class="vr-foot">
+        100% = el video llena la pantalla sin deformarse; un Reel vertical y un clip
+        horizontal al mismo % se ven del mismo tamaño. Se aplica al guardar.
+      </p>
+    </div>
+
+    </div>
+    </div>
+  </section>
 </main>
 
 <footer>
@@ -817,6 +1081,14 @@
     invoke('open_url', { url: href }).catch(function(err) { alert('Error: ' + err); });
   });
 
+  // Base URL of this build's local server, asked to the backend at init so
+  // the port lives in exactly one place (server.rs). The literal below is
+  // only the fallback for when the command isn't reachable.
+  var SERVER  = 'http://127.0.0.1:3001';
+  var vrActive = false;   // is the Video Requests module live in this process?
+  var view    = 'overlay';   // 'overlay' | 'vr' — which half of the app is showing
+  var vrLastSig = '';        // firma del último estado pintado, para no re-render
+
   var cfg     = {};
   var videos  = [];
   var sel     = null;   // reward name currently selected
@@ -850,6 +1122,12 @@
       cfg    = { rewards: {}, safeZones: { exclude: [] }, canvas: { width: 1920, height: 1080 } };
       videos = [];
     }
+    // This build's real address, and whether the Video Requests module
+    // booted with the process (the flag is only read at startup).
+    try { SERVER   = await invoke('server_url'); } catch (_) {}
+    try { vrActive = await invoke('video_requests_active'); } catch (_) {}
+    applyServerUrls();
+
     renderAll();
     initHistory();
 
@@ -891,10 +1169,45 @@
     document.getElementById('addZoneBtn').addEventListener('click', function(){ toggleZoneForm(true); });
     document.getElementById('zfCancel').addEventListener('click', function(){ toggleZoneForm(false); });
     document.getElementById('zfSave').addEventListener('click', saveZone);
+    Array.prototype.forEach.call(document.querySelectorAll('.view-tab'), function(tab) {
+      tab.addEventListener('click', function() { setView(tab.getAttribute('data-view')); });
+    });
+    setView('overlay');
+    document.getElementById('vrPairBtn').addEventListener('click', vrPair);
+    document.getElementById('vrCode').addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') vrPair();
+    });
+    document.getElementById('vrUnpairBtn').addEventListener('click', function() {
+      invoke('vr_unpair').catch(function(e) { vrShowError(e); });
+    });
+    document.getElementById('vrReconnectBtn').addEventListener('click', function() {
+      invoke('vr_reconnect').catch(function(e) { vrShowError(e); });
+    });
+    document.getElementById('vrInstallBtn').addEventListener('click', function() {
+      vrStartJob(this, 'vr_install_binaries');
+    });
+    document.getElementById('vrUpdateBtn').addEventListener('click', function() {
+      vrStartJob(this, 'vr_update_ytdlp');
+    });
+    document.getElementById('vrCookiesBtn').addEventListener('click', function() {
+      invoke('vr_open_cookies_dir').catch(function(e) { vrShowError(e); });
+    });
+    // El estado del módulo solo se consulta si está corriendo en este proceso.
+    if (vrActive) { pollVr(); setInterval(pollVr, 2000); }
+    wireVrPreview();
+    document.getElementById('vrEnabled').addEventListener('change', function() {
+      cfg.videoRequests = cfg.videoRequests || {};
+      cfg.videoRequests.enabled = this.checked;
+      markDirty();
+      renderVideoRequests();
+    });
     document.getElementById('canvasW').addEventListener('input', function(){ cfg.canvas.width = parseInt(this.value)||1920; markDirty(); });
     document.getElementById('canvasH').addEventListener('input', function(){ cfg.canvas.height = parseInt(this.value)||1080; markDirty(); });
     document.getElementById('openFolderBtn').addEventListener('click', function() {
       invoke('open_data_dir').catch(function(e){ alert('Error: ' + e); });
+    });
+    document.getElementById('openLogsBtn').addEventListener('click', function() {
+      invoke('open_logs_dir').catch(function(e){ alert('Error: ' + e); });
     });
 
     // Click-to-copy URLs in footer
@@ -1102,7 +1415,7 @@
 
   async function pingServer() {
     try {
-      var r = await fetch('http://127.0.0.1:3001/api/videos', { cache: 'no-store' });
+      var r = await fetch(SERVER + '/api/videos', { cache: 'no-store' });
       setConn(r.ok);
     } catch (_) { setConn(false); }
   }
@@ -1130,7 +1443,7 @@
     } else {
       wrap.className = 'warn';
       wrap.title = 'Ningún overlay conectado. En OBS: clic derecho en el Browser Source → Actualizar, '
-        + 'y verificá que la URL sea http://localhost:3001/overlay';
+        + 'y verificá que la URL sea ' + overlayUrl();
       dot.className = 'conn-dot warn';
       text.textContent = 'Sin overlay — revisá OBS';
     }
@@ -1267,6 +1580,7 @@
     renderTestSelect();
     renderZonesList();
     renderCanvas();
+    renderVideoRequests();
     if (sel !== null && cfg.rewards[sel]) {
       renderEditor(sel);
     } else {
@@ -1337,6 +1651,341 @@
     container.querySelectorAll('.del-btn').forEach(function(btn) {
       btn.addEventListener('click', function(e){ e.stopPropagation(); removeZone(parseInt(this.dataset.idx)); });
     });
+  }
+
+  // `localhost` reads better than `127.0.0.1` for something the streamer
+  // copies into OBS; both resolve to the same local server.
+  function overlayUrl() { return SERVER.replace('127.0.0.1', 'localhost') + '/overlay'; }
+
+  // Footer + onboarding must show THIS build's address, not a hardcoded one.
+  function applyServerUrls() {
+    document.getElementById('serverUrl').textContent  = SERVER.replace('127.0.0.1', 'localhost');
+    document.getElementById('overlayUrl').textContent = overlayUrl();
+    var onb = document.getElementById('onbOverlayUrl');
+    if (onb) onb.textContent = overlayUrl();
+  }
+
+  // ── Video Requests: posición y tamaño en pantalla ─────────────────────────
+  // Vive en cfg.videoRequests (config.json) y lo lee el overlay en
+  // playRequest. Las claves de animación son las mismas que en los canjes.
+
+  var vrlOri   = 'h';     // proporción del video de ejemplo, solo para el preview
+  var vrlWired = false;
+
+  function vrlRead() {
+    var v  = cfg.videoRequests || {};
+    var cw = (cfg.canvas && cfg.canvas.width)  || 1920;
+    var ch = (cfg.canvas && cfg.canvas.height) || 1080;
+    return {
+      random:  v.position === 'random',
+      sizePct: (typeof v.sizePct === 'number') ? Math.max(5, Math.min(100, Math.round(v.sizePct))) : 62,
+      // 0..1 en config.json (como en los canjes); acá se muestra en %.
+      volume:  (typeof v.volume === 'number') ? Math.max(0, Math.min(1, v.volume)) : 0.8,
+      x:       (typeof v.x === 'number') ? v.x : cw / 2,
+      y:       (typeof v.y === 'number') ? v.y : ch / 2,
+      zones:   v.respectSafeZones !== false,
+      who:     v.showSubmitter !== false,
+      animIn:  v.animIn  || 'pop',
+      animOut: v.animOut || 'pop',
+      cw: cw, ch: ch
+    };
+  }
+
+  function vrlWrite(patch) {
+    cfg.videoRequests = cfg.videoRequests || {};
+    Object.keys(patch).forEach(function(k) { cfg.videoRequests[k] = patch[k]; });
+    markDirty();
+    renderVrLayout();
+  }
+
+  function renderVrLayout() {
+    var L     = vrlRead();
+    var stage = document.getElementById('vrlStage');
+    var box   = document.getElementById('vrlBox');
+    if (!stage || !box) return;
+    stage.style.aspectRatio = L.cw + ' / ' + L.ch;
+    var k = (stage.clientWidth || 480) / L.cw;   // px del preview por px del canvas
+
+    // Las safe zones se dibujan para poder elegir un lugar que no las pise.
+    Array.prototype.forEach.call(stage.querySelectorAll('.zone'), function(z) { z.remove(); });
+    ((cfg.safeZones && cfg.safeZones.exclude) || []).forEach(function(z) {
+      var d = document.createElement('div');
+      d.className = 'zone';
+      d.style.left   = (z.x * k) + 'px';
+      d.style.top    = (z.y * k) + 'px';
+      d.style.width  = (z.width * k) + 'px';
+      d.style.height = (z.height * k) + 'px';
+      d.title = z.name || 'safe zone';
+      stage.insertBefore(d, box);
+    });
+
+    // Video de ejemplo al % elegido. 100% = llena la pantalla sin recortarse,
+    // la misma regla que usa el overlay.
+    var vw = vrlOri === 'v' ? 9 : 16, vh = vrlOri === 'v' ? 16 : 9;
+    var fs = Math.min(L.cw / vw, L.ch / vh) * L.sizePct / 100;
+    var fw = Math.round(vw * fs), fh = Math.round(vh * fs);
+    var x  = L.random ? (L.cw - fw) / 2 : L.x - fw / 2;
+    var y  = L.random ? (L.ch - fh) / 2 : L.y - fh / 2;
+    x = Math.max(0, Math.min(x, L.cw - fw));
+    y = Math.max(0, Math.min(y, L.ch - fh));
+    box.style.left   = (x * k) + 'px';
+    box.style.top    = (y * k) + 'px';
+    box.style.width  = (fw * k) + 'px';
+    box.style.height = (fh * k) + 'px';
+    box.classList.toggle('locked', L.random);
+    box.textContent = L.random ? 'al azar' : 'arrastrá';
+
+    document.getElementById('vrlReadout').textContent =
+      fw + '×' + fh + ' px  ·  ' + L.sizePct + '% de la pantalla  ·  '
+      + (L.random ? 'posición al azar' : 'centro en (' + Math.round(L.x) + ', ' + Math.round(L.y) + ')');
+
+    document.getElementById('vrlMode').value = L.random ? 'random' : 'fixed';
+    var s = document.getElementById('vrlSize');
+    if (s.value != L.sizePct) s.value = L.sizePct;
+    document.getElementById('vrlSizePct').textContent = L.sizePct + '%';
+    var volPct = Math.round(L.volume * 100);
+    var vs = document.getElementById('vrlVolume');
+    if (vs.value != volPct) vs.value = volPct;
+    document.getElementById('vrlVolumePct').textContent = volPct + '%';
+    document.getElementById('vrlZones').checked = L.zones;
+    document.getElementById('vrlWho').checked = L.who;
+    document.getElementById('vrlAnimIn').innerHTML  = animOptionsHtml(ANIM_IN_OPTS,  L.animIn);
+    document.getElementById('vrlAnimOut').innerHTML = animOptionsHtml(ANIM_OUT_OPTS, L.animOut);
+    Array.prototype.forEach.call(document.querySelectorAll('#vrlOri button'), function(b) {
+      b.classList.toggle('active', b.getAttribute('data-ori') === vrlOri);
+    });
+
+    if (!vrlWired) { vrlWired = true; wireVrLayout(); }
+  }
+
+  function wireVrLayout() {
+    var stage = document.getElementById('vrlStage');
+    var box   = document.getElementById('vrlBox');
+    document.getElementById('vrlMode').addEventListener('change', function() {
+      vrlWrite({ position: this.value === 'random' ? 'random' : 'fixed' });
+    });
+    document.getElementById('vrlSize').addEventListener('input', function() {
+      vrlWrite({ sizePct: Math.max(5, Math.min(100, parseInt(this.value) || 5)) });
+    });
+    document.getElementById('vrlVolume').addEventListener('input', function() {
+      vrlWrite({ volume: Math.max(0, Math.min(100, parseInt(this.value) || 0)) / 100 });
+    });
+    document.getElementById('vrlZones').addEventListener('change', function() {
+      vrlWrite({ respectSafeZones: this.checked });
+    });
+    document.getElementById('vrlWho').addEventListener('change', function() {
+      vrlWrite({ showSubmitter: this.checked });
+    });
+    document.getElementById('vrlAnimIn').addEventListener('change', function() {
+      vrlWrite({ animIn: this.value });
+    });
+    document.getElementById('vrlAnimOut').addEventListener('change', function() {
+      vrlWrite({ animOut: this.value });
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('#vrlOri button'), function(b) {
+      b.addEventListener('click', function() {
+        vrlOri = b.getAttribute('data-ori');
+        renderVrLayout();
+      });
+    });
+    window.addEventListener('resize', function() { if (view === 'vr') renderVrLayout(); });
+
+    // Arrastre: lo que se mueve es el CENTRO del video, en px del canvas, y
+    // por eso la misma posición sirve para un Reel y para un clip.
+    box.addEventListener('pointerdown', function(e) {
+      var L = vrlRead();
+      if (L.random) return;
+      e.preventDefault();
+      box.setPointerCapture(e.pointerId);
+      var k = (stage.clientWidth || 480) / L.cw;
+      var startX = e.clientX, startY = e.clientY, ox = L.x, oy = L.y;
+      cfg.videoRequests = cfg.videoRequests || {};
+      function move(ev) {
+        var nx = ox + (ev.clientX - startX) / k;
+        var ny = oy + (ev.clientY - startY) / k;
+        cfg.videoRequests.x = Math.round(Math.max(0, Math.min(nx, L.cw)));
+        cfg.videoRequests.y = Math.round(Math.max(0, Math.min(ny, L.ch)));
+        renderVrLayout();
+      }
+      function up() {
+        box.removeEventListener('pointermove', move);
+        box.removeEventListener('pointerup', up);
+        box.removeEventListener('pointercancel', up);
+        markDirty();
+      }
+      box.addEventListener('pointermove', move);
+      box.addEventListener('pointerup', up);
+      box.addEventListener('pointercancel', up);
+    });
+  }
+
+  // ── Video Requests: estado del módulo ─────────────────────────────────────
+
+  function vrShowError(msg) {
+    var box = document.getElementById('vrError');
+    box.textContent = String(msg);
+    box.style.display = msg ? '' : 'none';
+  }
+
+  async function vrPair() {
+    var input = document.getElementById('vrCode');
+    var code = (input.value || '').trim();
+    if (!code) return;
+    var btn = document.getElementById('vrPairBtn');
+    btn.disabled = true; btn.textContent = 'Emparejando…';
+    vrShowError('');
+    try {
+      await invoke('vr_pair', { code: code });
+      input.value = '';
+    } catch (e) { vrShowError(e); }
+    btn.disabled = false; btn.textContent = 'Emparejar';
+  }
+
+  var VR_JOB_LABEL = {
+    vrInstallBtn: 'Instalar lo que falte',
+    vrUpdateBtn:  'Actualizar yt-dlp'
+  };
+
+  // Bajar ffmpeg son ~110 MB y ya no bloquea al agente, así que el comando
+  // vuelve en el acto: no se puede usar su promesa como "terminó". Quién manda
+  // es `installing` de vr_status; acá solo se marca el botón para que no quede
+  // clickeable los ~2 s hasta el próximo poll.
+  function vrStartJob(btn, command) {
+    btn.disabled = true;
+    btn.textContent = 'Bajando…';
+    vrShowError('');
+    invoke(command).catch(function(e) { vrShowError(e); });
+  }
+
+  var VR_CONN = {
+    unpaired:   ['vr-state',      'sin emparejar'],
+    connecting: ['vr-state warn', 'conectando…'],
+    connected:  ['vr-state on',   'conectado'],
+    error:      ['vr-state warn', 'con problemas']
+  };
+
+  async function pollVr() {
+    var st;
+    try { st = await invoke('vr_status'); } catch (_) { return; }
+
+    // Los botones de descarga se sincronizan ANTES del corte por firma
+    // repetida. Si no, una descarga que empieza y termina entre dos polls
+    // (`yt-dlp -U` cuando ya está al día) no cambiaría nada más del estado, la
+    // firma daría igual, y el botón quedaría en "Bajando…" y deshabilitado
+    // para siempre.
+    Object.keys(VR_JOB_LABEL).forEach(function(id) {
+      var b = document.getElementById(id);
+      b.disabled = !!st.installing;
+      b.textContent = st.installing ? 'Bajando…' : VR_JOB_LABEL[id];
+    });
+
+    // Firma para no repintar en cada poll: el usuario podría estar tipeando el
+    // código y no queremos pisarle el input ni el foco.
+    var sig = JSON.stringify(st);
+    if (sig === vrLastSig) return;
+    vrLastSig = sig;
+
+    document.getElementById('vrPairCard').style.display = '';
+    document.getElementById('vrEnvCard').style.display = '';
+
+    var conn = VR_CONN[st.state] || VR_CONN.unpaired;
+    var pill = document.getElementById('vrConn');
+    pill.className = conn[0];
+    pill.textContent = st.channelLogin && st.state !== 'unpaired'
+      ? (conn[1] + ' · ' + st.channelLogin) : conn[1];
+
+    var paired = st.state !== 'unpaired';
+    document.getElementById('vrPairRow').style.display = paired ? 'none' : '';
+    document.getElementById('vrUnpairRow').style.display = paired ? '' : 'none';
+    // Solo tras un corte terminal (4409, token revocado…): mientras conecta o
+    // ya conectado, el botón no tiene sentido.
+    document.getElementById('vrReconnectBtn').style.display = st.state === 'error' ? '' : 'none';
+    document.getElementById('vrPairHelp').style.display = paired ? 'none' : '';
+
+    document.getElementById('vrYtdlp').textContent = st.ytdlpVersion || 'no encontrado';
+    document.getElementById('vrBins').textContent = st.binariesOk ? 'listos' : 'faltan';
+    document.getElementById('vrCookies').textContent =
+      st.cookiesState === 'ok' ? 'cargadas'
+      : st.cookiesState === 'expired' ? 'VENCIDAS — renovalas'
+      : 'sin cargar';
+    document.getElementById('vrQueue').textContent =
+      st.queueLen + (st.nowPlaying ? ' (reproduciendo uno)' : '');
+
+    vrShowError(st.error || '');
+  }
+
+  // The two halves of the app are separate views, not sections of one page:
+  // Video Requests has nothing to do with rewards, safe zones or the canvas,
+  // and the header tools that only make sense for the overlay (test reward +
+  // Probar) hide with it. Guardar/Descartar stay: they write the same config.
+  function setView(v) {
+    view = v;
+    var isOverlay = (v === 'overlay');
+    document.getElementById('sidebar').style.display      = isOverlay ? '' : 'none';
+    document.getElementById('editor').style.display       = isOverlay ? '' : 'none';
+    document.getElementById('overlayTools').style.display = isOverlay ? '' : 'none';
+    document.getElementById('vrView').style.display       = isOverlay ? 'none' : '';
+    document.querySelector('main').className = isOverlay ? '' : 'view-vr';
+    Array.prototype.forEach.call(document.querySelectorAll('.view-tab'), function(tab) {
+      tab.classList.toggle('active', tab.getAttribute('data-view') === v);
+    });
+    // El preview de posición se mide con el ancho real del lienzo, que es 0
+    // mientras la vista está oculta: se redibuja recién al mostrarla.
+    if (!isOverlay) renderVrLayout();
+  }
+
+  // ── Video Requests: ventana de preview (VRChat) ───────────────────────────
+  // Va aparte del guardar/deshacer: el switch actúa al instante y la
+  // preferencia la recuerda la app en su propio archivo. Cerrar la ventana
+  // con la X avisa por evento y acá se desmarca.
+  function wireVrPreview() {
+    var box  = document.getElementById('vrlPreview');
+    var note = document.getElementById('vrlPreviewNote');
+    if (!vrActive) {
+      box.disabled = true;
+      note.textContent = 'Disponible cuando el módulo esté corriendo (activalo arriba, guardá y reiniciá la app).';
+      return;
+    }
+    invoke('vr_preview_open').then(function(open) { box.checked = !!open; }).catch(function(){});
+    box.addEventListener('change', function() {
+      var want = this.checked;
+      invoke('vr_preview_window', { open: want }).catch(function(e) {
+        box.checked = !want;
+        alert('No se pudo ' + (want ? 'abrir' : 'cerrar') + ' la ventana de preview: ' + e);
+      });
+    });
+    var ev = window.__TAURI__ && window.__TAURI__.event;
+    if (ev && ev.listen) {
+      ev.listen('vr-preview', function(e) { box.checked = !!e.payload; }).catch(function(){});
+    }
+  }
+
+  // The flag is read once at startup, so turning it on/off only takes
+  // effect after a restart. Saying so beats a toggle that silently lies.
+  function renderVideoRequests() {
+    renderVrLayout();
+    var want = !!(cfg.videoRequests && cfg.videoRequests.enabled);
+    document.getElementById('vrEnabled').checked = want;
+    var note  = document.getElementById('vrNote');
+    var state = document.getElementById('vrState');
+    if (want !== vrActive) {
+      state.className = 'vr-state warn';
+      state.textContent = 'reinicio pendiente';
+      note.className = 'vr-note warn';
+      note.textContent = want
+        ? 'Guardá y reiniciá la app para que el módulo arranque.'
+        : 'Guardá y reiniciá la app para apagar el módulo. Hasta entonces sigue corriendo.';
+    } else if (vrActive) {
+      state.className = 'vr-state on';
+      state.textContent = 'activo';
+      note.className = 'vr-note on';
+      note.textContent = 'Módulo corriendo en este proceso.';
+    } else {
+      state.className = 'vr-state';
+      state.textContent = 'apagado';
+      note.className = 'vr-note';
+      note.textContent = 'Nada del módulo se inicializa: la app corre igual que siempre, solo canjes.';
+    }
   }
 
   function renderCanvas() {
@@ -1726,7 +2375,7 @@
     // Carga el contenido real del video (un frame) en el preview.
     if (firstVideo && vidEl && vidEl.dataset.src !== firstVideo) {
       vidEl.dataset.src = firstVideo;
-      vidEl.src = 'http://127.0.0.1:3001/' + firstVideo;
+      vidEl.src = SERVER + '/' + firstVideo;
       vidEl.addEventListener('loadeddata', function() {
         try { vidEl.currentTime = Math.min(0.1, (vidEl.duration || 1) / 2); } catch (_) {}
       }, { once: true });
@@ -2124,7 +2773,7 @@
     var probe = document.createElement('video');
     probe.preload = 'metadata';
     probe.muted = true;
-    probe.src = 'http://127.0.0.1:3001/' + path;
+    probe.src = SERVER + '/' + path;
     probe.addEventListener('loadedmetadata', function() {
       videoMetaCache[path] = {
         w: probe.videoWidth || 0,

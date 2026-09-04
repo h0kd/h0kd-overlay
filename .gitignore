@@ -7,6 +7,7 @@ node_modules/
 
 # Rust / Tauri build artifacts
 src-tauri/target/
+src-tauri/target-bundle/
 src-tauri/gen/
 # Cargo.lock is committed (this is an application, not a library) for
 # reproducible builds in CI and across machines.
@@ -20,7 +21,21 @@ twitch.json
 # macOS
 .DS_Store
 
+# Cloudflare (cloud/)
+cloud/.wrangler/
+cloud/.dev.vars
+# La config real lleva el id de la base D1, el Client ID de la app de Twitch y
+# el subdominio de la cuenta. Se versiona wrangler.example.toml en su lugar.
+cloud/wrangler.toml
+# package-lock.json SI se commitea, por el mismo motivo que Cargo.lock:
+# esto es una aplicacion, y los builds tienen que ser reproducibles.
+
 # Dev-only / personal (kept local, not in the public repo)
 /CLAUDE.md
 /PLANNING.md
 /config.json
+# Notas de trabajo, contexto y pendientes: son para nosotros, no para el repo.
+/NOTAS.md
+/notas/
+/TODO.md
+/scratch/

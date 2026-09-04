@@ -1,3 +1,4 @@
+use crate::logln;
 use crate::AppState;
 use axum::{
     extract::{
@@ -13,31 +14,156 @@ use futures_util::{SinkExt, StreamExt};
 use serde_json::json;
 use tower_http::{cors::CorsLayer, services::ServeDir};
 
-const SERVER_BIND: &str = "127.0.0.1:3001";
+/// Local HTTP/WS port. Single source of truth: the control panel asks for it
+/// via `server_url`, and the overlay derives it from its own location.
+pub const SERVER_PORT: u16 = 3001;
 
 static OVERLAY_HTML: &str = include_str!("../../src/overlay.html");
+
+// ── Preview (ventana de la app, para VRChat) ─────────────────────────────────
+// La ventana de preview es un ESPEJO mudo de lo que el overlay de OBS está
+// reproduciendo. No puede colgarse del mismo broadcast que el overlay: ahí
+// `receiver_count()` significa "hay un overlay", y con la preview conectada
+// el agente largaría pedidos sin OBS y nadie mandaría el `requestEnded`. Por
+// eso tiene su propio canal, en el que solo entra lo que ya pasó por el
+// overlay, y jamás se le lee nada.
+
+/// Qué hay en pantalla ahora, para que una preview que se abre a mitad de un
+/// pedido arranque desde donde va y no desde cero.
+#[derive(Clone)]
+pub struct PreviewHub {
+    tx: tokio::sync::broadcast::Sender<String>,
+    now: std::sync::Arc<std::sync::Mutex<Option<(serde_json::Value, std::time::Instant)>>>,
+}
+
+impl PreviewHub {
+    pub fn new() -> Self {
+        let (tx, _) = tokio::sync::broadcast::channel::<String>(16);
+        PreviewHub { tx, now: std::sync::Arc::new(std::sync::Mutex::new(None)) }
+    }
+
+    /// El agente mandó `playRequest` al overlay (y había overlay). `data` es
+    /// el mismo objeto que recibió el overlay: itemId, src, title, submitter.
+    pub fn play(&self, data: &serde_json::Value) {
+        if let Ok(mut n) = self.now.lock() {
+            *n = Some((data.clone(), std::time::Instant::now()));
+        }
+        let _ = self.tx.send(json!({ "type": "play", "item": data }).to_string());
+    }
+
+    /// El overlay terminó (o se fue con) ese pedido.
+    pub fn end(&self, item_id: &str) {
+        if let Ok(mut n) = self.now.lock() {
+            if n.as_ref().map(|(d, _)| d["itemId"].as_str() == Some(item_id)).unwrap_or(false) {
+                *n = None;
+            }
+        }
+        let _ = self.tx.send(json!({ "type": "end", "itemId": item_id }).to_string());
+    }
+
+    fn hello(&self) -> String {
+        let now = self.now.lock().ok().and_then(|n| n.clone()).map(|(mut d, since)| {
+            d["elapsed"] = json!(since.elapsed().as_secs_f64());
+            d
+        });
+        json!({ "type": "hello", "now": now }).to_string()
+    }
+}
+
+async fn preview_ws_handler(State(state): State<AppState>, ws: WebSocketUpgrade) -> Response {
+    let hub = state.preview.clone();
+    ws.on_upgrade(move |socket| handle_preview_ws(socket, hub))
+}
+
+async fn handle_preview_ws(socket: WebSocket, hub: PreviewHub) {
+    let (mut sink, mut stream) = socket.split();
+    let mut rx = hub.tx.subscribe();
+    if sink.send(Message::Text(hub.hello())).await.is_err() {
+        return;
+    }
+    logln!("[WS] Preview conectada.");
+
+    // Lo que diga la preview se descarta: no arbitra nada.
+    let mut read = tokio::spawn(async move {
+        while let Some(msg) = stream.next().await {
+            if matches!(msg, Ok(Message::Close(_)) | Err(_)) {
+                break;
+            }
+        }
+    });
+    let mut write = tokio::spawn(async move {
+        let mut keepalive = tokio::time::interval(std::time::Duration::from_secs(10));
+        keepalive.tick().await;
+        loop {
+            tokio::select! {
+                msg = rx.recv() => match msg {
+                    Ok(m) => if sink.send(Message::Text(m)).await.is_err() { break; },
+                    Err(_) => break,
+                },
+                _ = keepalive.tick() => {
+                    if sink.send(Message::Ping(Vec::new())).await.is_err() { break; }
+                }
+            }
+        }
+    });
+    tokio::select! {
+        _ = &mut read  => { write.abort(); }
+        _ = &mut write => { read.abort();  }
+    }
+    logln!("[WS] Preview desconectada.");
+}
+
+/// Identifica ESTA ejecución de la app. Va en el saludo del WebSocket: si el
+/// overlay ve un valor distinto al de su primera conexión, la app se reinició
+/// (quizá con un build nuevo) y se recarga solo. Sin esto, la fuente de
+/// navegador de OBS seguía corriendo el HTML viejo después de actualizar la
+/// app: se reconectaba por WS, cargaba la config nueva, y la aplicaba con el
+/// código de antes (el volumen de los pedidos, por ejemplo, no cambiaba).
+fn boot_id() -> u64 {
+    static BOOT: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
+    *BOOT.get_or_init(|| {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(1)
+    })
+}
 
 pub async fn start(state: AppState) -> std::io::Result<()> {
     let videos_dir = state.data_dir.join("videos");
     let health = state.server_health.clone();
 
-    let app = Router::new()
+    // Los mp4 de los pedidos se sirven desde una carpeta APARTE de videos/.
+    // Mezclarlos haría que aparezcan en el desplegable de rewards del panel,
+    // que lista esa carpeta entera.
+    let mut app = Router::new()
         .route("/", get(root_handler))
         .route("/overlay", get(serve_overlay))
         .route("/config.json", get(serve_config_json))
         .route("/api/config", get(get_config_handler).post(post_config_handler))
         .route("/api/videos", get(list_videos_handler))
-        .nest_service("/videos", ServeDir::new(videos_dir))
-        .layer(CorsLayer::permissive())
-        .with_state(state);
+        .nest_service("/videos", ServeDir::new(videos_dir));
 
+    if state.video_requests_enabled {
+        let media = crate::video_requests::media_dir(&state.data_dir);
+        let _ = std::fs::create_dir_all(&media);
+        app = app
+            .nest_service("/video-requests", ServeDir::new(media))
+            // WS de la ventana de preview (ver PreviewHub). La página en sí va
+            // empaquetada en la app; acá solo vive el espejo.
+            .route("/preview", get(preview_ws_handler));
+    }
+
+    let app = app.layer(CorsLayer::permissive()).with_state(state);
+
+    let bind = format!("127.0.0.1:{}", SERVER_PORT);
     // `?` propagates AddrInUse to the caller, which records it as ServerHealth::Error.
-    let listener = tokio::net::TcpListener::bind(SERVER_BIND).await?;
+    let listener = tokio::net::TcpListener::bind(&bind).await?;
     if let Ok(mut h) = health.lock() {
         *h = crate::ServerHealth::Ok;
     }
-    println!("[Server] Listening on http://{}", SERVER_BIND);
-    println!("[Server] Overlay (OBS) → http://{}/overlay", SERVER_BIND);
+    logln!("[Server] Listening on http://{}", bind);
+    logln!("[Server] Overlay (OBS) → http://{}/overlay", bind);
 
     axum::serve(listener, app)
         .await
@@ -51,7 +177,9 @@ async fn root_handler(State(state): State<AppState>, ws: Option<WebSocketUpgrade
     match ws {
         Some(upgrade) => {
             let tx = state.tx.clone();
-            upgrade.on_upgrade(move |socket| handle_ws(socket, tx))
+            let vr = state.vr_cmd.clone();
+            let preview = state.preview.clone();
+            upgrade.on_upgrade(move |socket| handle_ws(socket, tx, vr, preview))
         }
         None => Html(
             r#"<!doctype html><meta charset="utf-8"><title>Stream Overlay</title>
@@ -68,18 +196,23 @@ async fn root_handler(State(state): State<AppState>, ws: Option<WebSocketUpgrade
     }
 }
 
-async fn handle_ws(socket: WebSocket, tx: tokio::sync::broadcast::Sender<String>) {
+async fn handle_ws(
+    socket: WebSocket,
+    tx: tokio::sync::broadcast::Sender<String>,
+    vr: Option<tokio::sync::mpsc::Sender<crate::video_requests::VrCmd>>,
+    preview: PreviewHub,
+) {
     let (mut sink, mut stream) = socket.split();
     let mut rx = tx.subscribe();
 
     // Send Connected event (matches original protocol)
     let hello = json!({
         "event": { "source": "System", "type": "Connected" },
-        "data": { "clients": tx.receiver_count() }
+        "data": { "clients": tx.receiver_count(), "boot": boot_id() }
     })
     .to_string();
     let _ = sink.send(Message::Text(hello)).await;
-    println!("[WS] Overlay conectado. Total: {}", tx.receiver_count());
+    logln!("[WS] Overlay conectado. Total: {}", tx.receiver_count());
 
     // Reader: drain incoming messages and notice when the overlay goes away.
     // Breaking on Close (or any error) lets us reap the connection promptly so
@@ -89,6 +222,21 @@ async fn handle_ws(socket: WebSocket, tx: tokio::sync::broadcast::Sender<String>
         while let Some(msg) = stream.next().await {
             match msg {
                 Ok(Message::Close(_)) | Err(_) => break,
+                // El overlay avisa qué está mostrando. Es lo que le permite al
+                // agente saber cuándo la pantalla quedó libre: sin esto, el
+                // arbitraje tendría que adivinar por duración.
+                Ok(Message::Text(txt)) => {
+                    if let Some(vr) = vr.as_ref() {
+                        if let Some(ev) = parse_overlay_event(&txt) {
+                            // La preview se apaga cuando el overlay REAL
+                            // termina, no cuando ella cree que terminó.
+                            if let crate::video_requests::OverlayEvent::RequestEnded { item_id, .. } = &ev {
+                                preview.end(item_id);
+                            }
+                            let _ = vr.send(crate::video_requests::VrCmd::Overlay(ev)).await;
+                        }
+                    }
+                }
                 _ => {}
             }
         }
@@ -120,7 +268,26 @@ async fn handle_ws(socket: WebSocket, tx: tokio::sync::broadcast::Sender<String>
         _ = &mut read  => { write.abort(); }
         _ = &mut write => { read.abort();  }
     }
-    println!("[WS] Overlay desconectado. Total: {}", tx.receiver_count().saturating_sub(1));
+    logln!("[WS] Overlay desconectado. Total: {}", tx.receiver_count().saturating_sub(1));
+}
+
+/// Traduce lo que manda el overlay. Devuelve `None` para cualquier cosa que
+/// no se reconozca: un mensaje raro del navegador no puede tumbar nada.
+fn parse_overlay_event(txt: &str) -> Option<crate::video_requests::OverlayEvent> {
+    use crate::video_requests::OverlayEvent;
+    let v: serde_json::Value = serde_json::from_str(txt).ok()?;
+    match v["type"].as_str()? {
+        "overlayBusy" => Some(OverlayEvent::Busy(v["busy"].as_bool()?)),
+        "requestStarted" => Some(OverlayEvent::RequestStarted(v["itemId"].as_str()?.to_string())),
+        "requestEnded" => Some(OverlayEvent::RequestEnded {
+            item_id: v["itemId"].as_str()?.to_string(),
+            seconds: v["seconds"].as_f64().unwrap_or(0.0),
+            // Si el overlay no lo dice, se asume que falló: dar por reproducido
+            // algo que quizás nadie vio es la mentira más cara de las dos.
+            reason: v["reason"].as_str().unwrap_or("error").to_string(),
+        }),
+        _ => None,
+    }
 }
 
 // ── /overlay ────────────────────────────────────────────────────────────────
