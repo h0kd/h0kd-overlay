@@ -25,6 +25,8 @@ App de escritorio self-hosted, sin servicios externos y sin límite de videos.
 - ⏱️ **Duración automática**: detecta cuánto dura cada video para que no se corte.
 - 🟣 **Conexión directa a Twitch** (EventSub) — **no necesitás Streamer.bot** ni nada más.
 - 🔄 **Auto-actualizaciones**: te avisa cuando hay una versión nueva y se actualiza sola.
+- 📨 **Video Requests** (beta, opcional): tus viewers mandan links de YouTube, TikTok, Instagram o X,
+  tus mods los aprueban desde una web y salen en el overlay. [Cómo activarlo](docs/video-requests.md).
 
 ---
 
@@ -78,6 +80,27 @@ y *"Refresh browser when scene becomes active"*, y poné el source encima de tod
 
 ---
 
+## 📨 Video Requests (beta)
+
+Un módulo opcional: los viewers pegan un link en `videos.h0kd.dev/submit?ch=<tu_canal>`,
+los mods lo aprueban desde `videos.h0kd.dev/mod?ch=<tu_canal>` y la app lo baja y lo reproduce
+en el mismo overlay, sin pisar los canjes. Viene apagado; apagado, la app funciona igual que siempre.
+
+> **Alta manual, por ahora.** Cada canal se habilita a mano en el servidor. Pedilo con un
+> [issue](https://github.com/h0kd/h0kd-overlay/issues/new) con tu nombre de canal, o escribile a h0kd.
+
+En resumen, una vez habilitado:
+
+1. Entrá a **[videos.h0kd.dev/admin](https://videos.h0kd.dev/admin)** con tu Twitch y marcá a tus mods.
+2. En la app, pestaña **Video Requests**: **Activar módulo**, Guardar, reiniciar, **Instalar lo que falte**.
+3. Generá un código en `/admin` (Ajustes) y tocá **Emparejar** en la app.
+4. Compartí el link de viewers. Los envíos se abren solos cuando estás en vivo.
+
+La guía completa, con la ventana de preview para VRChat, las cookies de Instagram y los problemas
+comunes, está en **[docs/video-requests.md](docs/video-requests.md)**.
+
+---
+
 ## ❓ Problemas comunes
 
 | Problema | Solución |
@@ -113,11 +136,17 @@ cargo tauri build    # genera los instaladores del SO actual
 **Estructura:**
 
 ```
-src-tauri/src/lib.rs      ← comandos Tauri + arranque
-src-tauri/src/server.rs   ← server axum (HTTP + WebSocket) en :3001
-src-tauri/src/twitch.rs   ← OAuth Device Code Flow + cliente EventSub
-src/control.html          ← panel de control (UI nativa)
-src/overlay.html          ← overlay servido en /overlay
+src-tauri/src/lib.rs             ← comandos Tauri + arranque
+src-tauri/src/server.rs          ← server axum (HTTP + WebSocket) en :3001
+src-tauri/src/twitch.rs          ← OAuth Device Code Flow + cliente EventSub
+src-tauri/src/video_requests.rs  ← agente de Video Requests (WebSocket con la nube, cola)
+src-tauri/crates/video-requests-core/  ← descarga y transcodificación (yt-dlp, ffmpeg) + vrc-cli
+src/control.html                 ← panel de control (UI nativa)
+src/overlay.html                 ← overlay servido en /overlay
+src/preview.html                 ← ventana de preview (VRChat)
+cloud/                           ← Worker de Cloudflare + Durable Object + D1 (ver cloud/README.md)
+docs/ws-protocol.md              ← contrato entre la app y la nube
+docs/alta-de-canal.md            ← cómo habilitamos un canal (manual)
 ```
 
 **Releases:** al pushear un tag `v*`, GitHub Actions compila el instalador de Windows,

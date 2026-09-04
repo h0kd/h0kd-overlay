@@ -12,8 +12,7 @@
 //! ```
 //!
 //! Las cookies de Instagram se toman de `<data>/video-requests/instagram-cookies.txt`,
-//! donde `<data>` es `--data DIR` o, por defecto, la carpeta de la app
-//! experimental.
+//! donde `<data>` es `--data DIR` o, por defecto, la carpeta de datos de la app.
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -70,7 +69,7 @@ fn print_help() {
   transcode <archivo>     Valida y recodifica un archivo LOCAL (sin red)
 
 Opciones:
-  --data DIR              Carpeta de datos (default: la de la app experimental)
+  --data DIR              Carpeta de datos (default: la de la app)
   --out DIR               Dónde dejar el resultado de `fetch` (default: ./vrc-out)
   --id NOMBRE             Nombre base del archivo (default: un UUID)
   --cookies ARCHIVO       Cookies de Instagram (default: <data>/video-requests/instagram-cookies.txt)
@@ -136,8 +135,7 @@ impl Options {
     }
 }
 
-/// La misma carpeta que usa la app experimental, para compartir cookies y
-/// binarios con ella.
+/// La misma carpeta que usa la app, para compartir cookies y binarios con ella.
 fn default_data_dir() -> PathBuf {
     let base = if cfg!(target_os = "windows") {
         std::env::var_os("APPDATA").map(PathBuf::from)
@@ -148,7 +146,7 @@ fn default_data_dir() -> PathBuf {
             .map(PathBuf::from)
             .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")))
     };
-    base.unwrap_or_else(|| PathBuf::from(".")).join("Stream Overlay Experimental")
+    base.unwrap_or_else(|| PathBuf::from(".")).join("Stream Overlay")
 }
 
 fn config(data_dir: &Path, opts: &Options) -> core::PipelineConfig {

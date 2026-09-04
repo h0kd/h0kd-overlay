@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Stream Overlay Experimental",
-  "version": "0.2.13",
-  "identifier": "art.h0kd.streamoverlay.experimental",
+  "productName": "Stream Overlay",
+  "version": "0.3.0",
+  "identifier": "art.h0kd.streamoverlay",
   "build": {
     "frontendDist": "../src"
   },
@@ -11,7 +11,7 @@
     "windows": [
       {
         "label": "control",
-        "title": "Stream Overlay Experimental",
+        "title": "Stream Overlay",
         "url": "control.html",
         "width": 1200,
         "height": 800,
@@ -45,7 +45,7 @@
   "plugins": {
     "updater": {
       "endpoints": [
-        "https://github.com/h0kd/h0kd-overlay/releases/download/exp-latest/latest.json"
+        "https://github.com/h0kd/h0kd-overlay/releases/latest/download/latest.json"
       ],
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDEwQkU5MjQ1NDY0Rjk2M0QKUldROWxrOUdSWksrRUY4WWtqamVqU0MvenIrNzJKVXpmUVdrZUZSRG1zeng0dkoxTGRtR3VMMEwK"
     }

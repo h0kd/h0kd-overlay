@@ -211,7 +211,7 @@
      que agrupar no cambie el layout — y ocultarlos sea un solo display. */
   #overlayTools { display: contents; }
 
-  /* ── Video Requests (experimental) ── */
+  /* ── Video Requests ── */
   main.view-vr { grid-template-columns: 1fr; }
   #vrView { overflow-y: auto; padding: 22px 28px; }
   #vrView h2 { font-size: 18px; display: flex; align-items: center; gap: 10px; }
@@ -902,10 +902,10 @@
   </section>
 
   <section id="vrView" style="display:none">
-    <h2>Video Requests <span class="exp-tag">experimental</span></h2>
+    <h2>Video Requests <span class="exp-tag">beta</span></h2>
     <p class="vr-lead" style="max-width:none;margin-top:6px">
       Los viewers mandan links, los mods aprueban desde la web y lo aprobado sale en el overlay.
-      Apagado, la pestaña <b>Overlay</b> funciona igual que en la estable.
+      Apagado, la app funciona igual que siempre: solo canjes.
     </p>
 
     <div class="vr-grid">
@@ -1984,7 +1984,7 @@
       state.className = 'vr-state';
       state.textContent = 'apagado';
       note.className = 'vr-note';
-      note.textContent = 'Nada del módulo se inicializa: la app corre igual que la versión estable.';
+      note.textContent = 'Nada del módulo se inicializa: la app corre igual que siempre, solo canjes.';
     }
   }
 

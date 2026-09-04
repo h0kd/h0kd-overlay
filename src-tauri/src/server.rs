@@ -14,11 +14,9 @@ use futures_util::{SinkExt, StreamExt};
 use serde_json::json;
 use tower_http::{cors::CorsLayer, services::ServeDir};
 
-/// Local HTTP/WS port. The experimental build owns 3002 so it can run side
-/// by side with the stable app (which keeps 3001) instead of dying on
-/// AddrInUse. Single source of truth: the control panel asks for it via
-/// `server_url`, and the overlay derives it from its own location.
-pub const SERVER_PORT: u16 = 3002;
+/// Local HTTP/WS port. Single source of truth: the control panel asks for it
+/// via `server_url`, and the overlay derives it from its own location.
+pub const SERVER_PORT: u16 = 3001;
 
 static OVERLAY_HTML: &str = include_str!("../../src/overlay.html");
 

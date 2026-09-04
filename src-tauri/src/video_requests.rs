@@ -27,8 +27,8 @@ use video_requests_core as core;
 
 /// Clave de config.json con el origen del Worker. Antes no había valor por
 /// defecto, para no atar a nadie al servidor de una sola persona; pero la
-/// app experimental la distribuye h0kd a los canales que él mismo da de alta
-/// en SU Worker, y cada uno tenía que editar AppData a mano. Decisión de
+/// app la distribuye h0kd a los canales que él mismo da de alta en SU
+/// Worker, y cada uno tenía que editar AppData a mano. Decisión de
 /// h0kd (2026-09-03): por defecto `DEFAULT_WORKER_ORIGIN`, y quien tenga otro
 /// Worker lo pone acá.
 const WORKER_ORIGIN_KEY: &str = "videoRequests.workerOrigin";
@@ -152,8 +152,8 @@ fn save_pairing(data_dir: &Path, p: &Pairing) {
     }
 }
 
-/// El Worker de h0kd. Es el que usa cualquier instalación de la app
-/// experimental salvo que config.json diga otro: así dar de alta un canal es
+/// El Worker de h0kd. Es el que usa cualquier instalación de la app salvo
+/// que config.json diga otro: así dar de alta un canal es
 /// instalar, abrir y emparejar, sin tocar archivos en AppData.
 pub const DEFAULT_WORKER_ORIGIN: &str = "https://videos.h0kd.dev";
 
@@ -191,7 +191,7 @@ struct ReadyItem {
 ///
 /// El arbitraje acordado: los video requests esperan a que la pantalla esté
 /// libre; los canjes de puntos NUNCA esperan y siguen disparando al instante,
-/// exactamente igual que en la versión estable. Por eso acá solo hay una cola
+/// exactamente igual que sin el módulo. Por eso acá solo hay una cola
 /// de requests y un booleano que dice si hay algo en pantalla — el camino de
 /// los canjes no pasa por este módulo en ningún momento.
 struct Playback {

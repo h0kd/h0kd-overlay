@@ -21,7 +21,7 @@ pub struct AppState {
     pub server_health: Arc<Mutex<ServerHealth>>,
     /// Canal de comandos del módulo Video Requests. `None` cuando el flag
     /// está apagado, que es lo que hace verificable la regla "apagado = igual
-    /// que la versión estable": sin este Sender no hay a quién hablarle.
+    /// que sin el módulo": sin este Sender no hay a quién hablarle.
     pub vr_cmd: Option<mpsc::Sender<video_requests::VrCmd>>,
     /// Estado del módulo, para que la UI lo lea por polling.
     pub video_requests: Option<video_requests::SharedVrStatus>,
@@ -29,7 +29,7 @@ pub struct AppState {
     /// `videoRequests.enabled`. False means the module is never
     /// constructed: no sidecars, no cloud WebSocket, no extra routes, no
     /// UI beyond the toggle. Reading it once (instead of watching the
-    /// config) is deliberate — it makes "off = identical to stable"
+    /// config) is deliberate — it makes "off = identical to no module"
     /// verifiable by reading `run()`.
     pub video_requests_enabled: bool,
     /// Espejo mudo de lo que reproduce el overlay, para la ventana de
@@ -83,13 +83,9 @@ fn read_video_requests_flag(dir: &Path) -> bool {
 }
 
 /// Per-user OS application-data directory for the app's config + videos.
-/// Windows: %APPDATA%\Stream Overlay Experimental
-/// macOS:   ~/Library/Application Support/Stream Overlay Experimental
-/// Linux:   $XDG_DATA_HOME/Stream Overlay Experimental
-///
-/// The " Experimental" suffix keeps this build's config, videos and Twitch
-/// tokens completely apart from the stable app's, so the two can be
-/// installed and used side by side without overwriting each other.
+/// Windows: %APPDATA%\Stream Overlay
+/// macOS:   ~/Library/Application Support/Stream Overlay
+/// Linux:   $XDG_DATA_HOME/Stream Overlay
 fn os_app_data_dir() -> PathBuf {
     let base: PathBuf = if cfg!(target_os = "windows") {
         std::env::var_os("APPDATA")
@@ -105,7 +101,7 @@ fn os_app_data_dir() -> PathBuf {
             .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")))
             .unwrap_or_else(|| PathBuf::from("."))
     };
-    base.join("Stream Overlay Experimental")
+    base.join("Stream Overlay")
 }
 
 /// Create the data dir + videos/ folder, and seed a default config.json the
@@ -118,6 +114,80 @@ fn ensure_data_dir(dir: &Path) {
             let _ = std::fs::write(&cfg, pretty);
         }
     }
+}
+
+/// One-time hand-off from the experimental build ("Stream Overlay
+/// Experimental", exp-v0.2.10 to exp-v0.2.13), which shipped Video Requests
+/// before it merged into the stable app. It kept its own data dir, so the
+/// pairing with the cloud, the downloaded yt-dlp/ffmpeg, the Instagram
+/// cookies and the preview-window preference only exist there. This copies
+/// the whole `video-requests/` folder (minus the `media/` cache) and the
+/// `videoRequests` block of its config.json — nothing else: rewards, videos
+/// and Twitch tokens already live in the stable dir.
+///
+/// Runs only while the stable dir has no `video-requests/` folder yet, so it
+/// can never overwrite a setup that is already working. The experimental
+/// folder is left untouched; the user uninstalls that app whenever.
+fn migrate_from_experimental(dir: &Path) {
+    let old = match dir.parent() {
+        Some(p) => p.join("Stream Overlay Experimental"),
+        None => return,
+    };
+    let old_vr = old.join("video-requests");
+    let new_vr = dir.join("video-requests");
+    if !old_vr.is_dir() || new_vr.exists() {
+        return;
+    }
+    logln!("[Data] Migrating Video Requests from {}", old.display());
+    if let Err(e) = copy_dir_skipping(&old_vr, &new_vr, "media") {
+        logln!("[Data] Migration of video-requests/ failed: {}", e);
+        return;
+    }
+    let old_cfg = std::fs::read_to_string(old.join("config.json"))
+        .ok()
+        .and_then(|s| serde_json::from_str::<Value>(&s).ok());
+    let block = match old_cfg.and_then(|v| v.get("videoRequests").cloned()) {
+        Some(b) if b.is_object() => b,
+        _ => return,
+    };
+    let cfg_path = dir.join("config.json");
+    let mut cfg = std::fs::read_to_string(&cfg_path)
+        .ok()
+        .and_then(|s| serde_json::from_str::<Value>(&s).ok())
+        .unwrap_or_else(default_config);
+    cfg["videoRequests"] = block;
+    match serde_json::to_string_pretty(&cfg) {
+        Ok(pretty) => {
+            if let Err(e) = std::fs::write(&cfg_path, pretty) {
+                logln!("[Data] Could not write migrated config.json: {}", e);
+            } else {
+                logln!("[Data] Migrated videoRequests config (enabled={})",
+                    cfg["videoRequests"]["enabled"].as_bool().unwrap_or(false));
+            }
+        }
+        Err(e) => logln!("[Data] Could not serialize migrated config.json: {}", e),
+    }
+}
+
+/// Recursive copy of `from` into `to`, skipping the top-level entry named
+/// `skip` (the download cache, which is big and rebuilt on demand).
+fn copy_dir_skipping(from: &Path, to: &Path, skip: &str) -> std::io::Result<()> {
+    std::fs::create_dir_all(to)?;
+    for entry in std::fs::read_dir(from)? {
+        let entry = entry?;
+        let name = entry.file_name();
+        if name == skip {
+            continue;
+        }
+        let src = entry.path();
+        let dst = to.join(&name);
+        if src.is_dir() {
+            copy_dir_skipping(&src, &dst, "")?;
+        } else {
+            std::fs::copy(&src, &dst)?;
+        }
+    }
+    Ok(())
 }
 
 fn find_data_dir() -> PathBuf {
@@ -158,6 +228,7 @@ fn find_data_dir() -> PathBuf {
     // Default for distributed apps: per-user OS app-data dir, seeded on first run.
     let dir = os_app_data_dir();
     ensure_data_dir(&dir);
+    migrate_from_experimental(&dir);
     logln!("[Data] Using app data dir: {}", dir.display());
     dir
 }
@@ -292,8 +363,7 @@ fn open_url(url: String) -> Result<(), String> {
 }
 
 /// Base URL of THIS build's local server. The control panel builds every
-/// link and fetch from it instead of hardcoding a port, so the stable app
-/// (3001) and the experimental one (3002) each show their real address.
+/// link and fetch from it instead of hardcoding a port.
 #[tauri::command]
 fn server_url() -> String {
     format!("http://127.0.0.1:{}", server::SERVER_PORT)
@@ -306,7 +376,7 @@ fn video_requests_active(state: tauri::State<AppState>) -> bool {
     state.video_requests_enabled
 }
 
-// ── Video Requests (experimental) ────────────────────────────────────────────
+// ── Video Requests ─────────────────────────────────────────────────────────
 
 /// Estado del módulo para la UI. Con el flag apagado devuelve el estado por
 /// defecto en vez de fallar: la sección existe siempre, el módulo no.
@@ -669,4 +739,80 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod migration_tests {
+    use super::*;
+
+    fn fresh_root(tag: &str) -> PathBuf {
+        let root = std::env::temp_dir().join(format!("so-migrate-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        root
+    }
+
+    fn seed_experimental(root: &Path, enabled: bool) {
+        let old = root.join("Stream Overlay Experimental");
+        std::fs::create_dir_all(old.join("video-requests/bin")).unwrap();
+        std::fs::create_dir_all(old.join("video-requests/media")).unwrap();
+        std::fs::write(old.join("video-requests/pairing.json"), r#"{"token":"abc"}"#).unwrap();
+        std::fs::write(old.join("video-requests/bin/yt-dlp.exe"), b"bin").unwrap();
+        std::fs::write(old.join("video-requests/media/cache.mp4"), b"big").unwrap();
+        let cfg = json!({
+            "rewards": [{ "name": "viejo" }],
+            "videoRequests": { "enabled": enabled, "workerOrigin": "https://videos.h0kd.dev", "layout": { "size": 62 } }
+        });
+        std::fs::write(old.join("config.json"), cfg.to_string()).unwrap();
+    }
+
+    #[test]
+    fn copia_pairing_binarios_y_config_pero_no_el_cache() {
+        let root = fresh_root("basic");
+        seed_experimental(&root, true);
+        let dir = root.join("Stream Overlay");
+        ensure_data_dir(&dir);
+        let stable = json!({ "rewards": [{ "name": "r1" }, { "name": "r2" }], "canvas": { "width": 1920 } });
+        std::fs::write(dir.join("config.json"), stable.to_string()).unwrap();
+
+        migrate_from_experimental(&dir);
+
+        assert!(dir.join("video-requests/pairing.json").is_file());
+        assert!(dir.join("video-requests/bin/yt-dlp.exe").is_file());
+        assert!(!dir.join("video-requests/media").exists(), "el cache no se copia");
+        let cfg: Value = serde_json::from_str(&std::fs::read_to_string(dir.join("config.json")).unwrap()).unwrap();
+        assert_eq!(cfg["rewards"].as_array().unwrap().len(), 2, "las rewards de la estable quedan");
+        assert_eq!(cfg["canvas"]["width"], 1920);
+        assert_eq!(cfg["videoRequests"]["enabled"], true);
+        assert_eq!(cfg["videoRequests"]["layout"]["size"], 62);
+        assert!(root.join("Stream Overlay Experimental/video-requests/pairing.json").is_file(), "la vieja no se toca");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn no_pisa_una_instalacion_que_ya_tiene_video_requests() {
+        let root = fresh_root("existing");
+        seed_experimental(&root, true);
+        let dir = root.join("Stream Overlay");
+        ensure_data_dir(&dir);
+        std::fs::create_dir_all(dir.join("video-requests")).unwrap();
+        std::fs::write(dir.join("video-requests/pairing.json"), r#"{"token":"mio"}"#).unwrap();
+
+        migrate_from_experimental(&dir);
+
+        assert_eq!(std::fs::read_to_string(dir.join("video-requests/pairing.json")).unwrap(), r#"{"token":"mio"}"#);
+        let cfg: Value = serde_json::from_str(&std::fs::read_to_string(dir.join("config.json")).unwrap()).unwrap();
+        assert_eq!(cfg["videoRequests"]["enabled"], false, "la config sembrada no se toca");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn sin_carpeta_experimental_no_hace_nada() {
+        let root = fresh_root("none");
+        let dir = root.join("Stream Overlay");
+        ensure_data_dir(&dir);
+        migrate_from_experimental(&dir);
+        assert!(!dir.join("video-requests").exists());
+        let _ = std::fs::remove_dir_all(&root);
+    }
 }
