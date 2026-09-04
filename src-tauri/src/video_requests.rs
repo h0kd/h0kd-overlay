@@ -25,10 +25,12 @@ use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message;
 use video_requests_core as core;
 
-/// Origen del Worker. NO tiene valor por defecto a propósito: hardcodear un
-/// despliegue concreto en una app que se distribuye ataría a todos los usuarios
-/// al servidor de una sola persona. Cada quien pone el suyo en config.json,
-/// bajo `videoRequests.workerOrigin`.
+/// Clave de config.json con el origen del Worker. Antes no había valor por
+/// defecto, para no atar a nadie al servidor de una sola persona; pero la
+/// app experimental la distribuye h0kd a los canales que él mismo da de alta
+/// en SU Worker, y cada uno tenía que editar AppData a mano. Decisión de
+/// h0kd (2026-09-03): por defecto `DEFAULT_WORKER_ORIGIN`, y quien tenga otro
+/// Worker lo pone acá.
 const WORKER_ORIGIN_KEY: &str = "videoRequests.workerOrigin";
 
 const WS_SUBPROTOCOL: &str = "h0kd-vr.1";
@@ -150,6 +152,11 @@ fn save_pairing(data_dir: &Path, p: &Pairing) {
     }
 }
 
+/// El Worker de h0kd. Es el que usa cualquier instalación de la app
+/// experimental salvo que config.json diga otro: así dar de alta un canal es
+/// instalar, abrir y emparejar, sin tocar archivos en AppData.
+pub const DEFAULT_WORKER_ORIGIN: &str = "https://videos.h0kd.dev";
+
 /// Origen del Worker: el de config.json si está, si no el por defecto.
 fn worker_origin(data_dir: &Path) -> String {
     let cfg: Value = std::fs::read_to_string(data_dir.join("config.json"))
@@ -160,7 +167,7 @@ fn worker_origin(data_dir: &Path) -> String {
         .as_str()
         .map(str::trim)
         .filter(|s| s.starts_with("https://"))
-        .unwrap_or_default()
+        .unwrap_or(DEFAULT_WORKER_ORIGIN)
         .trim_end_matches('/')
         .to_string()
 }

@@ -63,7 +63,11 @@ fn default_config() -> Value {
         "rewards": {},
         "safeZones": { "exclude": [] },
         "canvas": { "width": 1920, "height": 1080 },
-        "videoRequests": { "enabled": false }
+        // La app experimental existe para Video Requests: una instalación
+        // nueva arranca con el módulo prendido y apuntando al Worker de h0kd.
+        // Apagarlo sigue siendo un click en la pestaña; y una config que ya
+        // existe no se toca (esto solo se escribe la primera vez).
+        "videoRequests": { "enabled": true, "workerOrigin": video_requests::DEFAULT_WORKER_ORIGIN }
     })
 }
 
