@@ -237,9 +237,26 @@ export class ChannelHub implements DurableObject {
         if (!item || item.status !== 'submitted') break; // idempotencia
 
         if (!msg.payload.ok) {
-          await q.setStatus(db, channelId, item.id, 'failed', {
-            error: msg.payload.error?.message ?? 'No se pudo leer el video.',
+          const err = msg.payload.error;
+          let mensaje = err?.message ?? 'No se pudo leer el video.';
+          // Agentes viejos mandaban el reel restringido como "extractor roto"
+          // con el error crudo de yt-dlp pegado. Hasta que todos tengan el
+          // fix, se reconoce acá y se reemplaza por el mensaje claro.
+          const restringido = /isn't available to everyone|certain audiences/i.test(mensaje);
+          if (restringido) {
+            mensaje = 'Instagram restringe ese reel (edad o región) y solo se ve con una '
+              + 'cuenta con sesión: no se puede bajar. Probá con otro link.';
+          }
+          // Si el problema es el LINK (restringido, sin video, borrado, privado,
+          // fuera de la allowlist) no es un fallo nuestro: es un rechazo
+          // automático con motivo, que es lo que el viewer ve prolijo. "Falló"
+          // queda para lo que sí es nuestro: extractor roto, red, disco.
+          const culpaDelLink = restringido
+            || err?.code === 'not_found' || err?.code === 'unsupported_platform';
+          await q.setStatus(db, channelId, item.id, culpaDelLink ? 'rejected_auto' : 'failed', {
+            error: mensaje,
           });
+          await this.pushQueueToMods();
           break;
         }
         await q.setMetadata(db, channelId, item.id, {

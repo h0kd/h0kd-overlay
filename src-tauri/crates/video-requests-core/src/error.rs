@@ -160,8 +160,8 @@ pub fn classify_ytdlp_stderr(stderr: &str) -> ErrorDetail {
     {
         return ErrorDetail::new(
             ErrorCode::NotFound,
-            "Instagram restringe ese reel a ciertos públicos (edad o región): solo se ve \
-             con una cuenta con sesión. Sin cookies de Instagram cargadas no se puede bajar.",
+            "Instagram restringe ese reel (edad o región) y solo se ve con una cuenta \
+             con sesión: no se puede bajar. Probá con otro link.",
         );
     }
     if s.contains("video unavailable")
