@@ -128,6 +128,8 @@ type DownloadRequest = Envelope<'download.request', {
   platform: 'instagram' | 'tiktok' | 'twitch' | 'youtube' | 'kappa' | 'x';
   max_resolution: '720' | '1080';
   approved_by: string;            // login del mod (auditoría / UI del agente)
+  submitter_login: string;        // quién lo pidió: el overlay lo muestra arriba del video
+  title: string | null;           // título leído en metadata (puede no haber)
 }>;
 ```
 
@@ -171,6 +173,8 @@ type Resync = Envelope<'resync', {
     platform: 'instagram' | 'tiktok' | 'twitch' | 'youtube' | 'kappa' | 'x';
     status: 'pending_review' | 'approved' | 'downloading' | 'ready';
     position: number;             // orden FIFO autoritativo
+    submitter_login: string;
+    title: string | null;
   }>;
 }>;
 ```

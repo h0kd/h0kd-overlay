@@ -192,6 +192,8 @@ export class ChannelHub implements DurableObject {
       platform: r.platform,
       status: r.status as ResyncItem['status'],
       position: i,
+      submitter_login: r.submitter_login,
+      title: r.title ?? null,
     }));
     send(ws, envelope('resync', { items }));
   }
@@ -406,6 +408,8 @@ export class ChannelHub implements DurableObject {
           platform: item.platform,
           max_resolution: settings.max_resolution,
           approved_by: body.by,
+          submitter_login: item.submitter_login,
+          title: item.title ?? null,
         }));
       }
     } else {

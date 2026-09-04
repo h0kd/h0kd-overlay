@@ -867,8 +867,8 @@ async fn handle_hub_message(
                     playback.queue.push_back(ReadyItem {
                         item_id: id,
                         file,
-                        title: String::new(),
-                        submitter: String::new(),
+                        title: it["title"].as_str().unwrap_or("").to_string(),
+                        submitter: it["submitter_login"].as_str().unwrap_or("").to_string(),
                     });
                 }
             }
@@ -908,6 +908,11 @@ async fn handle_hub_message(
         "download.request" => {
             let item_id = p["item_id"].as_str().unwrap_or("").to_string();
             let url = p["source_url"].as_str().unwrap_or("").to_string();
+            // Quién lo pidió y el título viajan con el pedido: el overlay los
+            // muestra arriba del video y la preview abajo. Sin esto, el rótulo
+            // "pedido de …" nunca salía: el agente mandaba el nombre vacío.
+            let submitter = p["submitter_login"].as_str().unwrap_or("").to_string();
+            let title = p["title"].as_str().unwrap_or("").to_string();
             let cfg = pipeline_config(data_dir, limits);
             let result = core::pipeline::prepare(bins, &url, &item_id, media, &cfg).await;
             if let Err(e) = &result {
@@ -918,8 +923,8 @@ async fn handle_hub_message(
                     playback.queue.push_back(ReadyItem {
                         item_id: item_id.clone(),
                         file: format!("{item_id}.mp4"),
-                        title: String::new(),
-                        submitter: String::new(),
+                        title,
+                        submitter,
                     });
                     update(shared, |s| s.queue_len = playback.queue.len());
                     logln!(

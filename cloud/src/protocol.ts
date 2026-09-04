@@ -102,6 +102,9 @@ export type DownloadRequest = Envelope<'download.request', {
   platform: Platform;
   max_resolution: '720' | '1080';
   approved_by: string;
+  /** Quién lo pidió y cómo se llama el video: el overlay los muestra en pantalla. */
+  submitter_login: string;
+  title: string | null;
 }>;
 
 export type Cancel = Envelope<'cancel', {
@@ -122,6 +125,8 @@ export interface ResyncItem {
   platform: Platform;
   status: 'pending_review' | 'approved' | 'downloading' | 'ready';
   position: number;
+  submitter_login: string;
+  title: string | null;
 }
 
 export type Resync = Envelope<'resync', { items: ResyncItem[] }>;
